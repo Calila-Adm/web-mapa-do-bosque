@@ -62,21 +62,29 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     df_6sem_cy = df[(df.index > inicio_6sem) & (df.index <= fim_semana)]
     semanas_cy = df_6sem_cy.resample('W').agg({COLUNA_METRICA: 'sum'}).tail(6)
 
-    # Meses CY (Jan até data ref)
+    # Meses CY (Jan–Dez do ano de referência), mantendo meses sem dados
     df_ano_cy = df[(df.index >= inicio_ano_cy) & (df.index <= fim_ano_cy)]
-    df_12m_cy = df_ano_cy.resample('ME').agg({COLUNA_METRICA: 'sum'})
-    df_12m_cy = df_12m_cy[df_12m_cy[COLUNA_METRICA] > 0]
+    df_12m_cy = df_ano_cy.resample('MS').agg({COLUNA_METRICA: 'sum'})
+    # Reindexa para 12 meses do ano (Jan–Dez)
+    idx_cy = pd.date_range(start=pd.Timestamp(year=ano_atual, month=1, day=1), periods=12, freq='MS')
+    df_12m_cy = df_12m_cy.reindex(idx_cy)
+    # Zera meses com ausencia total de dados no período (mantém NaN onde apropriado)
+    # Mantemos NaN para meses futuros (após o mês da data de referência)
+    mes_ref = data_referencia.month
+    futuros_mask = df_12m_cy.index.month > mes_ref
+    # Para meses posteriores ao mês de referência, mantemos NaN; para meses anteriores vazios, coloca 0
+    df_12m_cy.loc[~futuros_mask, COLUNA_METRICA] = df_12m_cy.loc[~futuros_mask, COLUNA_METRICA].fillna(0)
 
-    # Detectar mês parcial CY
+    # Detectar mês parcial CY (com base no mês da data de referência e dados reais)
     mes_parcial_cy = False
     dias_mes_parcial_cy = 0
-    if len(df_12m_cy) > 0:
-        ultimo_mes = df_12m_cy.index[-1]
-        if ultimo_mes.month == data_referencia.month and ultimo_mes.year == data_referencia.year:
-            inicio_mes = data_referencia.replace(day=1)
-            dias_com_dados = df[(df.index >= inicio_mes) & (df.index <= data_referencia)]
-            dias_mes_parcial_cy = len(dias_com_dados.index.unique())
-            mes_parcial_cy = data_referencia.day < ultimo_mes.days_in_month
+    inicio_mes_ref = data_referencia.replace(day=1)
+    fim_mes_ref = (inicio_mes_ref + pd.offsets.MonthEnd(1))
+    dados_mes_ref = df[(df.index >= inicio_mes_ref) & (df.index <= data_referencia)]
+    if not dados_mes_ref.empty:
+        dias_mes_parcial_cy = len(dados_mes_ref.index.normalize().unique())
+        # Parcial se a data de referência não é o último dia do mês
+        mes_parcial_cy = data_referencia < fim_mes_ref
 
     # PY
     ano_anterior = data_referencia.year - 1
@@ -96,20 +104,21 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     df_6sem_py = df[(df.index > inicio_6sem_py) & (df.index <= fim_semana_py)]
     semanas_py = df_6sem_py.resample('W').agg({COLUNA_METRICA: 'sum'}).tail(6)
 
-    # Meses PY (Jan-Dez)
+    # Meses PY (Jan–Dez do ano anterior), mantendo meses sem dados como 0
     df_ano_py = df[(df.index >= inicio_ano_py) & (df.index <= fim_ano_py)]
-    df_12m_py = df_ano_py.resample('ME').agg({COLUNA_METRICA: 'sum'})
-    df_12m_py = df_12m_py[df_12m_py[COLUNA_METRICA] > 0]
+    df_12m_py = df_ano_py.resample('MS').agg({COLUNA_METRICA: 'sum'})
+    idx_py = pd.date_range(start=pd.Timestamp(year=ano_anterior, month=1, day=1), periods=12, freq='MS')
+    df_12m_py = df_12m_py.reindex(idx_py)
+    df_12m_py[COLUNA_METRICA] = df_12m_py[COLUNA_METRICA].fillna(0)
 
     mes_parcial_py = False
     dias_mes_parcial_py = 0
-    if len(df_12m_py) > 0:
-        ultimo_mes_py = df_12m_py.index[-1]
-        if ultimo_mes_py.month == fim_semana_py.month and ultimo_mes_py.year == fim_semana_py.year:
-            inicio_mes_py = fim_semana_py.replace(day=1)
-            dias_com_dados_py = df[(df.index >= inicio_mes_py) & (df.index <= fim_semana_py)]
-            dias_mes_parcial_py = len(dias_com_dados_py.index.unique())
-            mes_parcial_py = fim_semana_py.day < ultimo_mes_py.days_in_month
+    inicio_mes_py = fim_semana_py.replace(day=1)
+    fim_mes_py = (inicio_mes_py + pd.offsets.MonthEnd(1))
+    dados_mes_py = df[(df.index >= inicio_mes_py) & (df.index <= fim_semana_py)]
+    if not dados_mes_py.empty:
+        dias_mes_parcial_py = len(dados_mes_py.index.normalize().unique())
+        mes_parcial_py = fim_semana_py < fim_mes_py
 
     return {
         'semanas_cy': semanas_cy,

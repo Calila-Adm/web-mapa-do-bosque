@@ -27,7 +27,7 @@ class BigQueryClient:
         return results.to_dataframe()
 
     def fetch_wbr_data(self, *, project_id: str | None = None, dataset: str | None = None, table: str | None = None,
-                       date_col: str | None = None, metric_col: str | None = None):
+                       date_col: str | None = None, metric_col: str | None = None, shopping_col: str | None = None):
         """Fetch WBR data using SQL at src/data/queries/wbr.sql and env/template variables.
 
         Uses BIGQUERY_PROJECT_ID, BIGQUERY_DATASET, BIGQUERY_TABLE if args not provided.
@@ -73,10 +73,12 @@ class BigQueryClient:
         # Replace placeholders for columns (default names if not provided)
         date_col = date_col or os.getenv('WBR_DATE_COL') or 'date'
         metric_col = metric_col or os.getenv('WBR_METRIC_COL') or 'metric_value'
+        shopping_col = shopping_col or os.getenv('WBR_SHOPPING_COL') or 'NULL'
 
         query = query.replace(placeholder, qualified)
         query = query.replace('{{date_col}}', date_col)
         query = query.replace('{{metric_col}}', metric_col)
+        query = query.replace('{{shopping_col}}', shopping_col)
 
         return self.run_query(query)
 

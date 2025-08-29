@@ -5,9 +5,13 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import streamlit as st
+import pandas as pd
 from src.utils.env import load_environment_variables
 from src.data.bigquery_client import BigQueryClient
 from src.wbr import gerar_grafico_wbr
+from src.wbr.processing import processar_dados_wbr, COLUNA_DATA as _COL_DATA, COLUNA_METRICA as _COL_METRICA
+from src.wbr.kpis import calcular_kpis as _calc_kpis
+import pathlib
 
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 PROJECT_ROOT = os.path.abspath(os.path.join(APP_ROOT, '..'))
@@ -29,7 +33,14 @@ with st.sidebar:
     st.header("Parâmetros")
     titulo = st.text_input("Título", value="INSIRA O TÍTULO")
     unidade = st.text_input("Unidade", value="INSIRA A UNIDADE")
+    metrica_tipo = st.radio("Métrica", options=["Fluxo de Pessoas", "Fluxo de Veículos"], horizontal=True)
     data_ref = st.date_input("Data de referência")
+    st.markdown("---")
+    st.header("Filtros")
+    shopping_col_env = os.getenv("WBR_SHOPPING_COL", "")
+    shopping_col = st.text_input("Coluna de Shopping (opcional)", value=shopping_col_env)
+    filtro_shopping = None  # será setado após carregar df (para termos as opções únicas)
+    filtro_ano = st.number_input("Ano (opcional)", min_value=2000, max_value=2100, value=None, step=1, format="%d")
     st.markdown("---")
     st.caption("Conexão BigQuery")
     bq_project = st.text_input("Project ID", value=os.getenv("BIGQUERY_PROJECT_ID", ""))
@@ -72,24 +83,65 @@ with st.sidebar:
         st.caption(f"Inferido: data='{inferred_date}' métrica='{inferred_metric}'")
 
 @st.cache_data(show_spinner=True)
-def load_wbr_data(project_id: str, dataset: str, table: str, date_col: str | None, metric_col: str | None):
+def load_wbr_data(project_id: str, dataset: str, table: str, date_col: str | None, metric_col: str | None, cache_buster: int | None = None, shopping_col: str | None = None):
     # If no columns provided, attempt to infer from schema
     if not date_col or not metric_col:
         inferred = bq_client.infer_wbr_columns(project_id=project_id, dataset=dataset, table=table)
         date_col = date_col or inferred[0]
         metric_col = metric_col or inferred[1]
-    return bq_client.fetch_wbr_data(project_id=project_id, dataset=dataset, table=table, date_col=date_col, metric_col=metric_col)
+    return bq_client.fetch_wbr_data(project_id=project_id, dataset=dataset, table=table, date_col=date_col, metric_col=metric_col, shopping_col=shopping_col)
 
 if not bq_project or not bq_dataset or not bq_table:
     st.warning("Defina Project/Dataset/Table do BigQuery na barra lateral.")
     df = None
 else:
-    df = load_wbr_data(bq_project, bq_dataset, bq_table, coluna_data or None, coluna_metrica or None)
+    # Include SQL file mtime to invalidate cache if query changes
+    sql_path = os.path.join(PROJECT_ROOT, 'src', 'data', 'queries', 'wbr.sql')
+    try:
+        cache_buster = int(os.path.getmtime(sql_path)) if os.path.exists(sql_path) else None
+    except Exception:
+        cache_buster = None
+    df = load_wbr_data(bq_project, bq_dataset, bq_table, coluna_data or None, coluna_metrica or None, cache_buster, shopping_col or None)
 
 if df is None or df.empty:
     st.warning("Sem dados do BigQuery.")
 else:
-    # DataFrame retornado já traz colunas normalizadas: 'date' e 'metric_value'
+    # DataFrame retornado já traz colunas normalizadas: 'date' e 'metric_value' (+ opcional 'shopping')
+    # Selectbox de Shopping: popula com valores únicos, inclui "Todos"
+    if 'shopping' in df.columns:
+        shoppings = sorted([s for s in df['shopping'].dropna().unique().tolist() if str(s).strip() != ''])
+        shopping_opts = ["Todos"] + shoppings
+        filtro_shopping = st.selectbox("Shopping", options=shopping_opts, index=0)
+        if filtro_shopping != "Todos":
+            df = df[df['shopping'] == filtro_shopping]
+    if filtro_ano:
+        df = df[pd.to_datetime(df['date']).dt.year == int(filtro_ano)]
+    if df.empty:
+        st.warning("Sem dados após aplicar filtros.")
+        st.stop()
+
+    # Seleção de métrica (suporta tabelas que têm ambas as métricas em colunas diferentes via env)
+    # Por padrão, a query já retorna 'metric_value'. Se houver duas colunas no BigQuery, use variáveis de ambiente
+    # WBR_METRIC_COL_PESSOAS e WBR_METRIC_COL_VEICULOS para refazer a consulta no toggle.
+    metric_col_pessoas = os.getenv("WBR_METRIC_COL_PESSOAS")
+    metric_col_veiculos = os.getenv("WBR_METRIC_COL_VEICULOS")
+    if metric_col_pessoas and metric_col_veiculos:
+        chosen_metric_col = metric_col_pessoas if metrica_tipo == "Fluxo de Pessoas" else metric_col_veiculos
+        # Recarrega dados com a coluna escolhida
+        df = load_wbr_data(bq_project, bq_dataset, bq_table, coluna_data or None, chosen_metric_col, cache_buster, shopping_col or None)
+        if filtro_shopping and 'shopping' in df.columns:
+            df = df[df['shopping'] == filtro_shopping]
+        if filtro_ano:
+            df = df[pd.to_datetime(df['date']).dt.year == int(filtro_ano)]
+        if df.empty:
+            st.warning("Sem dados após aplicar filtros.")
+            st.stop()
+
+    # Ajusta unidade conforme métrica
+    if metrica_tipo == "Fluxo de Pessoas" and not unidade:
+        unidade = "Pessoas"
+    elif metrica_tipo == "Fluxo de Veículos" and not unidade:
+        unidade = "Veículos"
     # Os campos da sidebar (coluna_data/coluna_metrica) são usados apenas para montar a SQL.
     fig = gerar_grafico_wbr(
         df,
@@ -100,5 +152,34 @@ else:
         data_referencia=data_ref.isoformat() if data_ref else None,
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    # Pequeno resumo para validar período e quantidade de dados
+    try:
+        dmin = pd.to_datetime(df['date']).min()
+        dmax = pd.to_datetime(df['date']).max()
+        st.caption(f"Período carregado: {dmin.date()} → {dmax.date()} | Registros: {len(df):,}")
+    except Exception:
+        pass
+
+    with st.expander("Debug: Séries agregadas e KPIs"):
+        try:
+            # Reaproveita o mesmo df renomeado esperado pelo processamento
+            df_proc = df.rename(columns={'date': _COL_DATA, 'metric_value': _COL_METRICA}).copy()
+            df_proc[_COL_DATA] = pd.to_datetime(df_proc[_COL_DATA])
+            data_ref_ts = pd.to_datetime(data_ref) if data_ref else pd.to_datetime(dmax)
+            dados = processar_dados_wbr(df_proc, data_ref_ts)
+            st.write("Semanas CY (últimas 6):")
+            st.dataframe(dados['semanas_cy'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
+            st.write("Semanas PY (últimas 6 equivalentes):")
+            st.dataframe(dados['semanas_py'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
+            st.write("Meses CY (Jan–Dez):")
+            st.dataframe(dados['meses_cy'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
+            st.write("Meses PY (Jan–Dez):")
+            st.dataframe(dados['meses_py'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
+            st.write("Flags:", {k: dados[k] for k in ['mes_parcial_cy','dias_mes_parcial_cy','ano_atual','ano_anterior']})
+            st.write("KPIs:")
+            st.json(_calc_kpis(df_proc, data_ref_ts))
+        except Exception as e:
+            st.caption(f"Debug indisponível: {e}")
 
     st.caption("Dados carregados do BigQuery usando a consulta em src/data/queries/wbr.sql")
