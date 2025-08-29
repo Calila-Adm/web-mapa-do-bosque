@@ -184,16 +184,51 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
 
     fig.update_layout(
         title={'text': titulo + nota_parcial, 'x': 0.5, 'xanchor': 'center', 'font': dict(size=26, color='black')},
-        xaxis=dict(ticktext=labels_x, tickvals=list(range(len(labels_x))), tickangle=0, gridcolor='rgba(240, 240, 240, 0.5)', showgrid=True, zeroline=False, tickfont=dict(size=15)),
-        yaxis=dict(title=f'{unidade} Semanais', tickformat='.1s', gridcolor='rgba(240, 240, 240, 0.5)', showgrid=True, zeroline=False,
-                   range=[min([v for v in valores_cy_semanas + valores_py_semanas if v is not None]) * 0.85, max([v for v in valores_cy_semanas + valores_py_semanas if v is not None]) * 1.15],
-                   titlefont=dict(size=16), tickfont=dict(size=14)),
-        yaxis2=dict(title=f'{unidade} Mensais', tickformat='.1s', gridcolor='rgba(240, 240, 240, 0.5)', showgrid=True, zeroline=False, overlaying='y', side='right',
-                    range=[min([v for v in valores_cy_meses + valores_py_meses if v is not None]) * 0.85, max([v for v in valores_cy_meses + valores_py_meses if v is not None]) * 1.15],
-                    titlefont=dict(size=16), tickfont=dict(size=14)),
-        hovermode='x unified', template='plotly_white', height=620, width=None, autosize=True, showlegend=True,
+        xaxis=dict(
+            ticktext=labels_x,
+            tickvals=list(range(len(labels_x))),
+            tickangle=0,
+            gridcolor='rgba(240, 240, 240, 0.5)',
+            showgrid=True,
+            zeroline=False,
+            tickfont=dict(size=15)
+        ),
+        yaxis=dict(
+            title=dict(text=f'{unidade} Semanais', font=dict(size=16)),
+            tickformat='.1s',
+            gridcolor='rgba(240, 240, 240, 0.5)',
+            showgrid=True,
+            zeroline=False,
+            range=[
+                min([v for v in valores_cy_semanas + valores_py_semanas if v is not None]) * 0.85,
+                max([v for v in valores_cy_semanas + valores_py_semanas if v is not None]) * 1.15
+            ],
+            tickfont=dict(size=14)
+        ),
+        yaxis2=dict(
+            title=dict(text=f'{unidade} Mensais', font=dict(size=16)),
+            tickformat='.1s',
+            gridcolor='rgba(240, 240, 240, 0.5)',
+            showgrid=True,
+            zeroline=False,
+            overlaying='y',
+            side='right',
+            range=[
+                min([v for v in valores_cy_meses + valores_py_meses if v is not None]) * 0.85,
+                max([v for v in valores_cy_meses + valores_py_meses if v is not None]) * 1.15
+            ],
+            tickfont=dict(size=14)
+        ),
+        hovermode='x unified',
+        template='plotly_white',
+        height=620,
+        width=None,
+        autosize=True,
+        showlegend=True,
         legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5, bordercolor="lightgray", borderwidth=1, font=dict(size=15)),
-        margin=dict(t=100, b=220, l=80, r=80), plot_bgcolor='white', paper_bgcolor='white'
+        margin=dict(t=100, b=220, l=80, r=80),
+        plot_bgcolor='white',
+        paper_bgcolor='white'
     )
 
     kpis = calcular_kpis(df, data_ref)

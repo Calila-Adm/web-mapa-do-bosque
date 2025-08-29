@@ -2,6 +2,7 @@ streamlit
 pandas
 numpy
 google-cloud-bigquery
+db-dtypes
 plotly
 streamlit-plotly-events
 python-dotenv
