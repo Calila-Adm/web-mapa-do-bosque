@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+google-cloud-bigquery
+plotly
+streamlit-plotly-events
+python-dotenv
+pytest
