@@ -8,9 +8,9 @@ This project is a Streamlit application designed to visualize data using the Wor
 wbr-streamlit-bigquery
 ├── src
 │   ├── app
-│   │   ├── streamlit_app.py         # Main entry point for the Streamlit application
+│   │   ├── streamlit_app.py         # Main Streamlit application (single-page)
 │   │   └── pages
-│   │       └── 01_Overview.py        # Overview page displaying key metrics
+│   │       └── .01_wbr.py            # Hidden page (disabled with dot prefix)
 │   ├── data
 │   │   ├── bigquery_client.py        # Handles BigQuery interactions
 │   │   ├── queries
@@ -34,7 +34,7 @@ wbr-streamlit-bigquery
 ├── notebooks
 │   └── exploration.ipynb              # Jupyter notebook for exploratory data analysis
 ├── .streamlit
-│   └── config.toml                    # Streamlit configuration settings
+│   └── config.toml                    # Streamlit configuration (server, theme)
 ├── .env.example                        # Template for environment variables
 ├── .gitignore                         # Files and directories to ignore by Git
 ├── requirements.txt                   # Python dependencies for the project
@@ -72,8 +72,8 @@ wbr-streamlit-bigquery
 
 ## Usage
 
-- Navigate to the overview page to view key metrics and visualizations.
-- Use the sidebar to explore different sections of the application.
+- The application runs as a single-page app with all controls in the sidebar.
+- Configure BigQuery connection and select metrics directly from the interface.
 
 ## Testing
 
