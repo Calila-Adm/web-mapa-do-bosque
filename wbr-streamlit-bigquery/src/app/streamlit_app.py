@@ -6,16 +6,16 @@ if PROJECT_ROOT not in sys.path:
 
 import streamlit as st
 import pandas as pd
+from datetime import datetime
 from src.utils.env import load_environment_variables
 from src.data.bigquery_client import BigQueryClient
 from src.wbr import gerar_grafico_wbr
-from src.wbr.processing import processar_dados_wbr, COLUNA_DATA as _COL_DATA, COLUNA_METRICA as _COL_METRICA
-from src.wbr.kpis import calcular_kpis as _calc_kpis
-import pathlib
+from src.wbr.kpis import calcular_kpis
 
+# Load environment variables
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 PROJECT_ROOT = os.path.abspath(os.path.join(APP_ROOT, '..'))
-load_environment_variables(base_dir=PROJECT_ROOT)  # Carrega .env do root do app
+load_environment_variables(base_dir=PROJECT_ROOT)
 
 # Normalize credential path to absolute (if relative)
 cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
@@ -26,160 +26,267 @@ if cred_path and not os.path.isabs(cred_path):
 # Initialize the BigQuery client
 bq_client = BigQueryClient()
 
-st.set_page_config(page_title="WBR Dashboard", layout="wide")
-st.title("WBR Dashboard")
+# Page configuration
+st.set_page_config(page_title="WBR Dashboard", layout="wide", page_icon="📊")
 
+# Hardcoded configurations for each table
+TABLES_CONFIG = {
+    'pessoas': {
+        'table': 'brief_fluxo_de_pessoas',
+        'date_col': 'data_de_entrada',
+        'metric_col': 'quantidade_de_registros_de_entrada',
+        'titulo': 'Fluxo de Pessoas',
+        'unidade': 'pessoas',
+        'icon': '👥',
+        'color': '#1E90FF'  # Blue
+    },
+    'veiculos': {
+        'table': 'brief_fluxo_de_veiculos',
+        'date_col': 'data_fluxo',
+        'metric_col': 'entradas_veiculos',
+        'titulo': 'Fluxo de Veículos',
+        'unidade': 'veículos',
+        'icon': '🚗',
+        'color': '#FF6B6B'  # Red
+    }
+}
+
+# Get BigQuery configuration from environment
+BQ_PROJECT = os.getenv("BIGQUERY_PROJECT_ID")
+BQ_DATASET = os.getenv("BIGQUERY_DATASET")
+
+# Check if BigQuery is configured
+if not BQ_PROJECT or not BQ_DATASET:
+    st.error("❌ Configuração do BigQuery não encontrada!")
+    st.info("Configure as seguintes variáveis de ambiente:")
+    st.code("""
+    BIGQUERY_PROJECT_ID=seu-projeto
+    BIGQUERY_DATASET=seu-dataset
+    GOOGLE_APPLICATION_CREDENTIALS=caminho/para/credentials.json
+    """)
+    st.stop()
+
+# Title and description
+st.title("📊 Dashboard WBR - Análise de Fluxo")
+st.markdown("---")
+
+# Sidebar with filters only (no BigQuery configuration)
 with st.sidebar:
-    st.header("Parâmetros")
-    titulo = st.text_input("Título", value="INSIRA O TÍTULO")
-    unidade = st.text_input("Unidade", value="INSIRA A UNIDADE")
-    metrica_tipo = st.radio("Métrica", options=["Fluxo de Pessoas", "Fluxo de Veículos"], horizontal=True)
-    data_ref = st.date_input("Data de referência")
-    st.markdown("---")
-    st.header("Filtros")
-    shopping_col_env = os.getenv("WBR_SHOPPING_COL", "")
-    shopping_col = st.text_input("Coluna de Shopping (opcional)", value=shopping_col_env)
-    filtro_shopping = None  # será setado após carregar df (para termos as opções únicas)
-    filtro_ano = st.number_input("Ano (opcional)", min_value=2000, max_value=2100, value=None, step=1, format="%d")
-    st.markdown("---")
-    st.caption("Conexão BigQuery")
-    bq_project = st.text_input("Project ID", value=os.getenv("BIGQUERY_PROJECT_ID", ""))
-    bq_dataset = st.text_input("Dataset", value=os.getenv("BIGQUERY_DATASET", ""))
-    # List tables dynamically when project/dataset are provided
-    default_table = os.getenv("BIGQUERY_TABLE", "")
-    # If default_table is fully qualified (project.dataset.table), reduce to table_id for matching
-    if default_table and default_table.count('.') >= 1:
-        default_table = default_table.split('.')[-1]
-    tables = []
-    @st.cache_data(ttl=600, show_spinner=False)
-    def list_tables_cached(project_id: str, dataset: str):
-        return BigQueryClient().list_tables(project_id=project_id, dataset=dataset)
-    if bq_project and bq_dataset:
-        try:
-            tables = list_tables_cached(bq_project, bq_dataset)
-        except Exception as e:
-            st.caption(f"Não foi possível listar tabelas: {e}")
-    if tables:
-        preselect_index = tables.index(default_table) if default_table in tables else 0
-        bq_table = st.selectbox("Table", options=tables, index=preselect_index)
-    else:
-        bq_table = st.text_input("Table", value=default_table)
-
-    # Try to infer columns when we have project/dataset/table
-    inferred_date = None
-    inferred_metric = None
-    if bq_project and bq_dataset and bq_table:
-        try:
-            inferred_date, inferred_metric = bq_client.infer_wbr_columns(project_id=bq_project, dataset=bq_dataset, table=bq_table)
-        except Exception as e:
-            st.caption(f"Não foi possível inferir colunas: {e}")
-
-    # Prefill with env or inferred
-    default_date_col = os.getenv("WBR_DATE_COL", "") or (inferred_date or "")
-    default_metric_col = os.getenv("WBR_METRIC_COL", "") or (inferred_metric or "")
-    coluna_data = st.text_input("Coluna de data", value=default_date_col)
-    coluna_metrica = st.text_input("Coluna métrica", value=default_metric_col)
-    if inferred_date or inferred_metric:
-        st.caption(f"Inferido: data='{inferred_date}' métrica='{inferred_metric}'")
-
-@st.cache_data(show_spinner=True)
-def load_wbr_data(project_id: str, dataset: str, table: str, date_col: str | None, metric_col: str | None, cache_buster: int | None = None, shopping_col: str | None = None):
-    # If no columns provided, attempt to infer from schema
-    if not date_col or not metric_col:
-        inferred = bq_client.infer_wbr_columns(project_id=project_id, dataset=dataset, table=table)
-        date_col = date_col or inferred[0]
-        metric_col = metric_col or inferred[1]
-    return bq_client.fetch_wbr_data(project_id=project_id, dataset=dataset, table=table, date_col=date_col, metric_col=metric_col, shopping_col=shopping_col)
-
-if not bq_project or not bq_dataset or not bq_table:
-    st.warning("Defina Project/Dataset/Table do BigQuery na barra lateral.")
-    df = None
-else:
-    # Include SQL file mtime to invalidate cache if query changes
-    sql_path = os.path.join(PROJECT_ROOT, 'src', 'data', 'queries', 'wbr.sql')
-    try:
-        cache_buster = int(os.path.getmtime(sql_path)) if os.path.exists(sql_path) else None
-    except Exception:
-        cache_buster = None
-    df = load_wbr_data(bq_project, bq_dataset, bq_table, coluna_data or None, coluna_metrica or None, cache_buster, shopping_col or None)
-
-if df is None or df.empty:
-    st.warning("Sem dados do BigQuery.")
-else:
-    # DataFrame retornado já traz colunas normalizadas: 'date' e 'metric_value' (+ opcional 'shopping')
-    # Selectbox de Shopping: popula com valores únicos, inclui "Todos"
-    if 'shopping' in df.columns:
-        shoppings = sorted([s for s in df['shopping'].dropna().unique().tolist() if str(s).strip() != ''])
-        shopping_opts = ["Todos"] + shoppings
-        filtro_shopping = st.selectbox("Shopping", options=shopping_opts, index=0)
-        if filtro_shopping != "Todos":
-            df = df[df['shopping'] == filtro_shopping]
-    if filtro_ano:
-        df = df[pd.to_datetime(df['date']).dt.year == int(filtro_ano)]
-    if df.empty:
-        st.warning("Sem dados após aplicar filtros.")
-        st.stop()
-
-    # Seleção de métrica (suporta tabelas que têm ambas as métricas em colunas diferentes via env)
-    # Por padrão, a query já retorna 'metric_value'. Se houver duas colunas no BigQuery, use variáveis de ambiente
-    # WBR_METRIC_COL_PESSOAS e WBR_METRIC_COL_VEICULOS para refazer a consulta no toggle.
-    metric_col_pessoas = os.getenv("WBR_METRIC_COL_PESSOAS")
-    metric_col_veiculos = os.getenv("WBR_METRIC_COL_VEICULOS")
-    if metric_col_pessoas and metric_col_veiculos:
-        chosen_metric_col = metric_col_pessoas if metrica_tipo == "Fluxo de Pessoas" else metric_col_veiculos
-        # Recarrega dados com a coluna escolhida
-        df = load_wbr_data(bq_project, bq_dataset, bq_table, coluna_data or None, chosen_metric_col, cache_buster, shopping_col or None)
-        if filtro_shopping and 'shopping' in df.columns:
-            df = df[df['shopping'] == filtro_shopping]
-        if filtro_ano:
-            df = df[pd.to_datetime(df['date']).dt.year == int(filtro_ano)]
-        if df.empty:
-            st.warning("Sem dados após aplicar filtros.")
-            st.stop()
-
-    # Ajusta unidade conforme métrica
-    if metrica_tipo == "Fluxo de Pessoas" and not unidade:
-        unidade = "Pessoas"
-    elif metrica_tipo == "Fluxo de Veículos" and not unidade:
-        unidade = "Veículos"
-    # Os campos da sidebar (coluna_data/coluna_metrica) são usados apenas para montar a SQL.
-    fig = gerar_grafico_wbr(
-        df,
-        coluna_data="date",
-        coluna_pessoas="metric_value",
-        titulo=titulo,
-        unidade=unidade,
-        data_referencia=data_ref.isoformat() if data_ref else None,
+    st.header("🎯 Filtros")
+    
+    # Date reference for calculations
+    data_ref = st.date_input(
+        "📅 Data de Referência",
+        value=datetime.now(),
+        help="Data base para cálculos de KPIs"
     )
-    st.plotly_chart(fig, use_container_width=True)
+    
+    # Year filter
+    filtro_ano = st.selectbox(
+        "📆 Ano",
+        options=[None] + list(range(2020, 2026)),
+        format_func=lambda x: "Todos os anos" if x is None else str(x)
+    )
+    
+    # Shopping filter (optional - will be populated if column exists)
+    shopping_col = os.getenv("WBR_SHOPPING_COL", "shopping")
+    filtro_shopping = st.text_input(
+        "🏢 Shopping (opcional)",
+        placeholder="Digite o nome do shopping",
+        help="Deixe vazio para ver todos"
+    )
+    
+    st.markdown("---")
+    st.header("📐 Layout")
+    
+    # Layout selector
+    layout_opcao = st.radio(
+        "Disposição dos gráficos:",
+        options=["Lado a lado", "Um abaixo do outro", "Abas"],
+        help="Escolha como visualizar os gráficos"
+    )
+    
+    st.markdown("---")
+    st.caption(f"🔗 Conectado a: {BQ_PROJECT}.{BQ_DATASET}")
 
-    # Pequeno resumo para validar período e quantidade de dados
+# Cache function for loading data
+@st.cache_data(ttl=300, show_spinner=False)  # Cache for 5 minutes
+def load_table_data(config: dict, project: str, dataset: str):
+    """Load data from BigQuery for a specific table configuration"""
     try:
-        dmin = pd.to_datetime(df['date']).min()
-        dmax = pd.to_datetime(df['date']).max()
-        st.caption(f"Período carregado: {dmin.date()} → {dmax.date()} | Registros: {len(df):,}")
-    except Exception:
-        pass
+        df = bq_client.fetch_wbr_data(
+            project_id=project,
+            dataset=dataset,
+            table=config['table'],
+            date_col=config['date_col'],
+            metric_col=config['metric_col'],
+            shopping_col=shopping_col if filtro_shopping else None
+        )
+        return df
+    except Exception as e:
+        st.error(f"Erro ao carregar {config['titulo']}: {str(e)}")
+        return None
 
-    with st.expander("Debug: Séries agregadas e KPIs"):
-        try:
-            # Reaproveita o mesmo df renomeado esperado pelo processamento
-            df_proc = df.rename(columns={'date': _COL_DATA, 'metric_value': _COL_METRICA}).copy()
-            df_proc[_COL_DATA] = pd.to_datetime(df_proc[_COL_DATA])
-            data_ref_ts = pd.to_datetime(data_ref) if data_ref else pd.to_datetime(dmax)
-            dados = processar_dados_wbr(df_proc, data_ref_ts)
-            st.write("Semanas CY (últimas 6):")
-            st.dataframe(dados['semanas_cy'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
-            st.write("Semanas PY (últimas 6 equivalentes):")
-            st.dataframe(dados['semanas_py'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
-            st.write("Meses CY (Jan–Dez):")
-            st.dataframe(dados['meses_cy'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
-            st.write("Meses PY (Jan–Dez):")
-            st.dataframe(dados['meses_py'].reset_index().rename(columns={_COL_METRICA: 'valor'}))
-            st.write("Flags:", {k: dados[k] for k in ['mes_parcial_cy','dias_mes_parcial_cy','ano_atual','ano_anterior']})
-            st.write("KPIs:")
-            st.json(_calc_kpis(df_proc, data_ref_ts))
-        except Exception as e:
-            st.caption(f"Debug indisponível: {e}")
+def apply_filters(df: pd.DataFrame, year_filter=None, shopping_filter=None):
+    """Apply filters to dataframe"""
+    if df is None or df.empty:
+        return df
+    
+    # Apply year filter
+    if year_filter:
+        df = df[df['date'].dt.year == year_filter]
+    
+    # Apply shopping filter
+    if shopping_filter and 'shopping' in df.columns:
+        df = df[df['shopping'].str.contains(shopping_filter, case=False, na=False)]
+    
+    return df
 
-    st.caption("Dados carregados do BigQuery usando a consulta em src/data/queries/wbr.sql")
+def render_metrics(df: pd.DataFrame, titulo: str):
+    """Render KPI metrics for a dataframe"""
+    if df is None or df.empty:
+        st.warning(f"Sem dados para calcular KPIs de {titulo}")
+        return
+    
+    try:
+        kpis = calcular_kpis(df, data_referencia=data_ref)
+        
+        # Usar 2 colunas para métricas em layout mais compacto
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                label="📈 YoY",
+                value=f"{kpis.get('yoy_pct', 0):.1f}%",
+                delta=f"{kpis.get('yoy_abs', 0):,.0f}",
+                help="Comparação Year-over-Year"
+            )
+            st.metric(
+                label="📅 MTD",
+                value=f"{kpis.get('mtd_atual', 0):,.0f}",
+                delta=f"{kpis.get('mtd_pct', 0):.1f}%",
+                help="Month-to-Date"
+            )
+        
+        with col2:
+            st.metric(
+                label="📊 WoW",
+                value=f"{kpis.get('wow_pct', 0):.1f}%",
+                delta=f"{kpis.get('wow_abs', 0):,.0f}",
+                help="Comparação Week-over-Week"
+            )
+            st.metric(
+                label="📌 Média",
+                value=f"{df['metric_value'].mean():,.0f}",
+                help="Média do período"
+            )
+    except Exception as e:
+        st.error(f"Erro ao calcular KPIs: {str(e)}")
+
+def render_chart(config: dict, df: pd.DataFrame):
+    """Render WBR chart for a specific configuration"""
+    if df is None or df.empty:
+        st.warning(f"Sem dados disponíveis para {config['titulo']}")
+        return
+    
+    try:
+        # Generate WBR chart
+        # O DataFrame vem com colunas normalizadas: 'date' e 'metric_value'
+        fig = gerar_grafico_wbr(
+            df=df,
+            coluna_data='date',  # Nome da coluna normalizada
+            coluna_pessoas='metric_value',  # Nome da coluna normalizada
+            titulo=f"{config['icon']} {config['titulo']}",
+            unidade=config['unidade'],
+            data_referencia=data_ref
+        )
+        
+        # Display chart
+        st.plotly_chart(fig, use_container_width=True, key=f"chart_{config['table']}")
+        
+        # Display metrics below chart
+        render_metrics(df, config['titulo'])
+        
+        # Optional: Show data preview
+        with st.expander("📋 Ver dados brutos"):
+            st.dataframe(
+                df[['date', 'metric_value']].tail(30),
+                use_container_width=True,
+                hide_index=True
+            )
+    
+    except Exception as e:
+        st.error(f"Erro ao gerar gráfico: {str(e)}")
+
+# Load data for both tables
+with st.spinner("Carregando dados..."):
+    df_pessoas = load_table_data(TABLES_CONFIG['pessoas'], BQ_PROJECT, BQ_DATASET)
+    df_veiculos = load_table_data(TABLES_CONFIG['veiculos'], BQ_PROJECT, BQ_DATASET)
+    
+    # Apply filters
+    df_pessoas_filtered = apply_filters(df_pessoas, filtro_ano, filtro_shopping) if df_pessoas is not None else None
+    df_veiculos_filtered = apply_filters(df_veiculos, filtro_ano, filtro_shopping) if df_veiculos is not None else None
+
+# Render based on selected layout
+if layout_opcao == "Lado a lado":
+    # Two columns layout
+    col1, col2 = st.columns(2, gap="medium")
+    
+    with col1:
+        st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
+        if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
+            st.info(f"📊 {len(df_pessoas_filtered):,} registros")
+            render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
+        else:
+            st.warning("Nenhum dado de pessoas encontrado")
+    
+    with col2:
+        st.subheader(f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}")
+        if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
+            st.info(f"📊 {len(df_veiculos_filtered):,} registros")
+            render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
+        else:
+            st.warning("Nenhum dado de veículos encontrado")
+
+elif layout_opcao == "Um abaixo do outro":
+    # Vertical layout
+    st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
+    if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
+        st.info(f"📊 {len(df_pessoas_filtered):,} registros")
+        render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
+    else:
+        st.warning("Nenhum dado de pessoas encontrado")
+    
+    st.markdown("---")
+    
+    st.subheader(f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}")
+    if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
+        st.info(f"📊 {len(df_veiculos_filtered):,} registros")
+        render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
+    else:
+        st.warning("Nenhum dado de veículos encontrado")
+
+else:  # Abas
+    # Tabs layout
+    tab_pessoas, tab_veiculos = st.tabs([
+        f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}",
+        f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}"
+    ])
+    
+    with tab_pessoas:
+        if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
+            st.info(f"📊 {len(df_pessoas_filtered):,} registros")
+            render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
+        else:
+            st.warning("Nenhum dado de pessoas encontrado")
+    
+    with tab_veiculos:
+        if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
+            st.info(f"📊 {len(df_veiculos_filtered):,} registros")
+            render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
+        else:
+            st.warning("Nenhum dado de veículos encontrado")
+
+# Footer
+st.markdown("---")
+st.caption("💡 Dica: Use os filtros na barra lateral para refinar a análise")

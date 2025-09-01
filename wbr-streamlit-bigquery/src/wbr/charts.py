@@ -212,15 +212,15 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         return [lo * 0.85, hi * 1.15]
 
     fig.update_layout(
-        title={'text': titulo + nota_parcial, 'x': 0.5, 'xanchor': 'center', 'font': dict(size=26, color='black')},
+        title={'text': titulo + nota_parcial, 'x': 0.5, 'xanchor': 'center', 'font': dict(size=20, color='black')},
         xaxis=dict(
             ticktext=labels_x,
             tickvals=list(range(len(labels_x))),
-            tickangle=0,
+            tickangle=-45 if len(labels_x) > 10 else 0,  # Rotaciona labels se muitos pontos
             gridcolor='rgba(240, 240, 240, 0.5)',
             showgrid=True,
             zeroline=False,
-            tickfont=dict(size=15)
+            tickfont=dict(size=11)
         ),
         yaxis=dict(
             title=dict(text=f'{unidade} Semanais', font=dict(size=16)),
@@ -244,12 +244,12 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         ),
         hovermode='x unified',
         template='plotly_white',
-        height=620,
-        width=None,
-        autosize=True,
+        height=500,  # Altura menor para caber melhor em layouts múltiplos
+        width=None,  # Largura automática
+        autosize=True,  # Permite redimensionamento automático
         showlegend=True,
-        legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5, bordercolor="lightgray", borderwidth=1, font=dict(size=15)),
-        margin=dict(t=100, b=220, l=80, r=80),
+        legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5, bordercolor="lightgray", borderwidth=1, font=dict(size=11)),
+        margin=dict(t=60, b=150, l=50, r=50),  # Margens otimizadas
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
