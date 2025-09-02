@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.coverage
+*.egg-info/
+
+# Notebooks outputs
+notebooks/.ipynb_checkpoints/
+
+# Virtual envs
+.env/
+.venv/
+venv/
+ENV/
+
+# Secrets (do not send into image)
+.secrets/
+**/credentials*/
+*.json
+
+# Git
+.git/
+.gitignore
+
+# OS/Editors
+.DS_Store
+.vscode/
+
+# Build/Cache
+build/
+dist/

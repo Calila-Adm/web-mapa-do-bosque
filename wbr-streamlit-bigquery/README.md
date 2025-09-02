@@ -70,10 +70,29 @@ wbr-streamlit-bigquery
    streamlit run src/app/streamlit_app.py
    ```
 
+
+## Deploy rápido com Docker + ngrok
+
+Este projeto inclui um `Dockerfile` e `docker-compose.yml` para executar o Streamlit e expor via ngrok (sidecar).
+
+Passos:
+
+1) Crie seu arquivo `.env` a partir de `.env.example` e preencha:
+   - `BIGQUERY_PROJECT_ID`, `BIGQUERY_DATASET`
+   - `GOOGLE_APPLICATION_CREDENTIALS` com o caminho ABSOLUTO no host para o JSON da service account.
+
+2) Crie `.secrets/.env` contendo seu token do ngrok:
+   - `NGROK_AUTHTOKEN=seu_token`
+
+3) Suba com Docker Compose:
+
+   - O serviço `app` expõe a porta 8501 localmente.
+   - O serviço `ngrok` criará um túnel público e a UI estará em http://localhost:4040.
+
+Ao subir, acesse a URL Pública listada na interface do ngrok (porta 4040) ou nos logs do container do ngrok.
+
 ## Usage
 
-- The application runs as a single-page app with all controls in the sidebar.
-- Configure BigQuery connection and select metrics directly from the interface.
 
 ## Testing
 
