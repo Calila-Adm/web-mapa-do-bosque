@@ -71,4 +71,4 @@ else:
         titulo="INSIRA O TÍTULO",
         unidade="INSIRA A UNIDADE",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')

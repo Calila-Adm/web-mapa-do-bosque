@@ -80,6 +80,11 @@ with st.sidebar:
         value=datetime.now(),
         help="Data base para cálculos de KPIs"
     )
+    # Normaliza para Timestamp para evitar comparações date vs datetime
+    try:
+        data_ref_ts = pd.Timestamp(data_ref)
+    except Exception:
+        data_ref_ts = pd.Timestamp(datetime.now())
     
     # Year filter
     filtro_ano = st.selectbox(
@@ -134,7 +139,11 @@ def apply_filters(df: pd.DataFrame, year_filter=None, shopping_filter=None):
     
     # Apply year filter
     if year_filter:
-        df = df[df['date'].dt.year == year_filter]
+        # Support both when 'date' is a column or the index
+        if 'date' in df.columns:
+            df = df[pd.to_datetime(df['date']).dt.year == year_filter]
+        elif isinstance(df.index, pd.DatetimeIndex):
+            df = df[df.index.year == year_filter]
     
     # Apply shopping filter
     if shopping_filter and 'shopping' in df.columns:
@@ -149,7 +158,7 @@ def render_metrics(df: pd.DataFrame, titulo: str):
         return
     
     try:
-        kpis = calcular_kpis(df, data_referencia=data_ref)
+        kpis = calcular_kpis(df, data_referencia=data_ref_ts)
         
         # Usar 2 colunas para métricas em layout mais compacto
         col1, col2 = st.columns(2)
@@ -198,23 +207,25 @@ def render_chart(config: dict, df: pd.DataFrame):
             coluna_pessoas='metric_value',  # Nome da coluna normalizada
             titulo=f"{config['icon']} {config['titulo']}",
             unidade=config['unidade'],
-            data_referencia=data_ref
+            data_referencia=data_ref_ts
         )
-        
+
         # Display chart
-        st.plotly_chart(fig, use_container_width=True, key=f"chart_{config['table']}")
-        
+        st.plotly_chart(fig, width='stretch', key=f"chart_{config['table']}")
+
         # Display metrics below chart
         render_metrics(df, config['titulo'])
-        
+
         # Optional: Show data preview
         with st.expander("📋 Ver dados brutos"):
-            st.dataframe(
-                df[['date', 'metric_value']].tail(30),
-                use_container_width=True,
-                hide_index=True
-            )
-    
+            # Be resilient if 'date' is the index
+            display_df = df.reset_index()
+            # If reset_index created a column named 'index' and 'date' doesn't exist, rename it to 'date'
+            if 'date' not in display_df.columns and 'index' in display_df.columns:
+                display_df = display_df.rename(columns={'index': 'date'})
+            cols = [c for c in ['date', 'metric_value'] if c in display_df.columns]
+            st.dataframe(display_df[cols].tail(30), width='stretch', hide_index=True)
+
     except Exception as e:
         st.error(f"Erro ao gerar gráfico: {str(e)}")
 
@@ -235,7 +246,6 @@ if layout_opcao == "Lado a lado":
     with col1:
         st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
         if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
-            st.info(f"📊 {len(df_pessoas_filtered):,} registros")
             render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
         else:
             st.warning("Nenhum dado de pessoas encontrado")
@@ -243,7 +253,6 @@ if layout_opcao == "Lado a lado":
     with col2:
         st.subheader(f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}")
         if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
-            st.info(f"📊 {len(df_veiculos_filtered):,} registros")
             render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
         else:
             st.warning("Nenhum dado de veículos encontrado")
@@ -252,7 +261,6 @@ elif layout_opcao == "Um abaixo do outro":
     # Vertical layout
     st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
     if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
-        st.info(f"📊 {len(df_pessoas_filtered):,} registros")
         render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
     else:
         st.warning("Nenhum dado de pessoas encontrado")
@@ -261,7 +269,6 @@ elif layout_opcao == "Um abaixo do outro":
     
     st.subheader(f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}")
     if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
-        st.info(f"📊 {len(df_veiculos_filtered):,} registros")
         render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
     else:
         st.warning("Nenhum dado de veículos encontrado")
@@ -275,14 +282,12 @@ else:  # Abas
     
     with tab_pessoas:
         if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
-            st.info(f"📊 {len(df_pessoas_filtered):,} registros")
             render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
         else:
             st.warning("Nenhum dado de pessoas encontrado")
     
     with tab_veiculos:
         if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
-            st.info(f"📊 {len(df_veiculos_filtered):,} registros")
             render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
         else:
             st.warning("Nenhum dado de veículos encontrado")
