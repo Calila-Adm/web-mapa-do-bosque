@@ -6,6 +6,10 @@ __pycache__/
 
 # VS Code
 .vscode/
+.claude/
+.knowledge/
+.knowledge_cache/
+.copilot/
 
 # macOS
 .DS_Store

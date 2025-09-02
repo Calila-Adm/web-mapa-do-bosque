@@ -38,7 +38,8 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
 
     valores_cy_semanas = list(dados['semanas_cy'][metrica].values)
     valores_py_semanas = list(dados['semanas_py'][metrica].values)
-    x_semanas = list(range(6))
+    # X dinâmico para semanas (quantas existirem)
+    x_semanas = list(range(len(valores_cy_semanas)))
 
     valores_cy_meses = list(dados['meses_cy'][metrica].values)
     valores_py_meses = list(dados['meses_py'][metrica].values)
@@ -47,7 +48,10 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         valores_cy_meses += [None] * (12 - len(valores_cy_meses))
     if len(valores_py_meses) < 12:
         valores_py_meses += [None] * (12 - len(valores_py_meses))
-    x_meses = list(range(7, 7 + 12))
+    # Começo dos meses = quantidade de semanas + 1 (há um espaçador entre blocos)
+    semanas_count = len(x_semanas)
+    meses_offset = semanas_count + 1
+    x_meses = list(range(meses_offset, meses_offset + 12))
 
     def _yoy(cy, py):
         cyf = _to_float(cy)
@@ -70,10 +74,9 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
     semanas_do_ano = dados['semanas_cy'].index.isocalendar().week.tolist()
     labels_semanas = [f'Wk {sem}' for sem in semanas_do_ano]
 
-    meses_ordenados = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
-    labels_meses = []
-    # Labels fixos Jan–Dez
-    labels_meses = meses_ordenados.copy()
+    # Labels de meses baseados no índice para garantir alinhamento 1:1 com os valores
+    meses_map = {1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN', 7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'}
+    labels_meses = [meses_map.get(ts.month, ts.strftime('%b').upper()) for ts in dados['meses_cy'].index]
 
     # Preenche YOY mensal até 12 itens
     while len(yoy_meses) < 12:
@@ -176,7 +179,7 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         if cy is not None:
             tem_dados = _is_positive(cy)
             eh_ultimo_com_dados = tem_dados and (i == len([x for x in valores_cy_meses_clean if _is_positive(x)]) - 1)
-            x_pos = (i + 7.5) if eh_ultimo_com_dados else (i + 7)
+            x_pos = (i + meses_offset + 0.5) if eh_ultimo_com_dados else (i + meses_offset)
             is_parcial = eh_ultimo_com_dados and dados['mes_parcial_cy']
             valor_texto = formatar_valor(cy, 'numero')
             yshift_valor = 15 if eh_ultimo_com_dados else 25
@@ -186,14 +189,16 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
                 color = 'darkgreen' if yoy > 0 else 'darkred' if yoy < 0 else 'black'
                 fig.add_annotation(x=x_pos, y=cy, text=formatar_valor(yoy, 'percentual'), showarrow=False, yshift=yshift_yoy, font=dict(size=16, color=color), yref='y2')
 
-    fig.add_vline(x=6, line_width=1, line_dash="solid", line_color="lightgray", opacity=0.5)
+    # Linha separadora entre semanas e meses na posição dinâmica
+    fig.add_vline(x=semanas_count, line_width=1, line_dash="solid", line_color="lightgray", opacity=0.5)
 
     nota_parcial = ""
     if dados['mes_parcial_cy'] and len(dados['meses_cy']) > 0:
-        meses_pt = {'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março', 'April': 'Abril', 'May': 'Maio', 'June': 'Junho', 'July': 'Julho', 'August': 'Agosto', 'September': 'Setembro', 'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'}
-        mes_nome_en = dados['meses_cy'].index[-1].strftime('%B')
-        mes_nome_pt = meses_pt.get(mes_nome_en, mes_nome_en)
-        ultimo_dia_com_dados = pd.Timestamp(data_ref).strftime('%d/%m/%Y')
+        # Usa o mês da data de referência para a legenda de mês parcial
+        meses_pt_num = {1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'}
+        data_ref_ts = pd.Timestamp(data_ref)
+        mes_nome_pt = meses_pt_num.get(data_ref_ts.month, data_ref_ts.strftime('%B'))
+        ultimo_dia_com_dados = data_ref_ts.strftime('%d/%m/%Y')
         nota_parcial = f"<br><sub>{mes_nome_pt} parcial (até {ultimo_dia_com_dados})</sub>"
 
     # Faixas de eixo seguras contra listas vazias
@@ -254,7 +259,8 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         paper_bgcolor='white'
     )
 
-    kpis = calcular_kpis(df, data_ref)
+    # Use the normalized column names that BigQuery client provides
+    kpis = calcular_kpis(df, data_ref, coluna_data='date', coluna_metrica='metric_value')
     kpi_headers = ['LastWk', 'WOW', 'YOY(Semana)', 'MTD', 'YOY(Mês)', 'QTD', 'YOY(Trimestre)', 'YTD', 'YOY(Ano)']
     kpi_values = [
         formatar_valor(kpis['ultima_semana']),
