@@ -31,30 +31,31 @@ def calcular_kpis(df: pd.DataFrame, data_referencia: pd.Timestamp, coluna_data: 
         raise ValueError(f"Column '{metrica}' not found in DataFrame columns: {df.columns.tolist()}")
     from pandas.tseries.offsets import DateOffset
     from datetime import date
+    from decimal import Decimal
 
-    def _to_float(x):
+    def _to_decimal(x):
         try:
             if pd.isna(x):
-                return 0.0
-            return float(x)
+                return Decimal(0.0)
+            return Decimal(x)
         except Exception:
-            return 0.0
+            return Decimal(0.0)
 
     def _safe_div(num, den):
-        n = _to_float(num)
-        d = _to_float(den)
-        return (n / d) if d > 0 else 0.0
+        n = _to_decimal(num)
+        d = _to_decimal(den)
+        return (n / d) if d > 0 else Decimal(0.0)
 
     fim_semana_calendario = data_ref_ts.to_period('W-SUN').end_time.normalize()
     inicio_semana_calendario = (fim_semana_calendario - timedelta(days=6)).normalize()
     fim_periodo_atual = data_ref_ts.normalize()
-    ultima_semana = _to_float(df[(df.index >= inicio_semana_calendario) & (df.index <= fim_periodo_atual)][metrica].sum())
+    ultima_semana = _to_decimal(df[(df.index >= inicio_semana_calendario) & (df.index <= fim_periodo_atual)][metrica].sum())
 
     dias_decorridos_na_semana = (fim_periodo_atual - inicio_semana_calendario).days
 
     inicio_semana_anterior = inicio_semana_calendario - timedelta(weeks=1)
     fim_periodo_anterior = inicio_semana_anterior + timedelta(days=dias_decorridos_na_semana)
-    semana_anterior = _to_float(df[(df.index >= inicio_semana_anterior) & (df.index <= fim_periodo_anterior)][metrica].sum())
+    semana_anterior = _to_decimal(df[(df.index >= inicio_semana_anterior) & (df.index <= fim_periodo_anterior)][metrica].sum())
 
     semana_atual_iso = fim_semana_calendario.isocalendar()[1]
     ano_anterior = data_ref_ts.year - 1
@@ -65,25 +66,25 @@ def calcular_kpis(df: pd.DataFrame, data_referencia: pd.Timestamp, coluna_data: 
 
     inicio_semana_py = (fim_semana_py - timedelta(days=6)).normalize()
     fim_periodo_py = inicio_semana_py + timedelta(days=dias_decorridos_na_semana)
-    semana_py = _to_float(df[(df.index >= inicio_semana_py) & (df.index <= fim_periodo_py)][metrica].sum())
+    semana_py = _to_decimal(df[(df.index >= inicio_semana_py) & (df.index <= fim_periodo_py)][metrica].sum())
 
     inicio_mes = data_ref_ts.replace(day=1)
-    mes_atual = _to_float(df[(df.index >= inicio_mes) & (df.index <= data_ref_ts)][metrica].sum())
+    mes_atual = _to_decimal(df[(df.index >= inicio_mes) & (df.index <= data_ref_ts)][metrica].sum())
     inicio_mes_py = inicio_mes - DateOffset(years=1)
     fim_mes_py = data_ref_ts - DateOffset(years=1)
-    mes_py = _to_float(df[(df.index >= inicio_mes_py) & (df.index <= fim_mes_py)][metrica].sum())
+    mes_py = _to_decimal(df[(df.index >= inicio_mes_py) & (df.index <= fim_mes_py)][metrica].sum())
 
     inicio_trimestre = data_ref_ts.replace(day=1, month=((data_ref_ts.month-1)//3)*3 + 1)
-    trimestre_atual = _to_float(df[(df.index >= inicio_trimestre) & (df.index <= data_ref_ts)][metrica].sum())
+    trimestre_atual = _to_decimal(df[(df.index >= inicio_trimestre) & (df.index <= data_ref_ts)][metrica].sum())
     inicio_trimestre_py = inicio_trimestre - DateOffset(years=1)
     fim_trimestre_py = data_ref_ts - DateOffset(years=1)
-    trimestre_py = _to_float(df[(df.index >= inicio_trimestre_py) & (df.index <= fim_trimestre_py)][metrica].sum())
+    trimestre_py = _to_decimal(df[(df.index >= inicio_trimestre_py) & (df.index <= fim_trimestre_py)][metrica].sum())
 
     inicio_ano = data_ref_ts.replace(month=1, day=1)
-    ano_atual = _to_float(df[(df.index >= inicio_ano) & (df.index <= data_ref_ts)][metrica].sum())
+    ano_atual = _to_decimal(df[(df.index >= inicio_ano) & (df.index <= data_ref_ts)][metrica].sum())
     inicio_ano_py = inicio_ano - DateOffset(years=1)
     fim_ano_py = data_ref_ts - DateOffset(years=1)
-    ano_py = _to_float(df[(df.index >= inicio_ano_py) & (df.index <= fim_ano_py)][metrica].sum())
+    ano_py = _to_decimal(df[(df.index >= inicio_ano_py) & (df.index <= fim_ano_py)][metrica].sum())
 
     return {
         'ultima_semana': ultima_semana,

@@ -75,10 +75,8 @@ class BigQueryClient:
         metric_col = metric_col or os.getenv('WBR_METRIC_COL') or 'metric_value'
         shopping_col = shopping_col or os.getenv('WBR_SHOPPING_COL') or 'NULL'
 
-        query = query.replace(placeholder, qualified)
-        query = query.replace('{{date_col}}', date_col)
-        query = query.replace('{{metric_col}}', metric_col)
-        query = query.replace('{{shopping_col}}', shopping_col)
+        # TODO(human): Implement BigQuery-specific placeholder replacements
+        # Replace the generic placeholders with BigQuery syntax
 
         return self.run_query(query)
 

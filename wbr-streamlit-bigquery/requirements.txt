@@ -1,9 +1,13 @@
 streamlit
 pandas
 numpy
-google-cloud-bigquery
-google-cloud-bigquery-storage
-db-dtypes
+# BigQuery dependencies (comentado para uso futuro)
+# google-cloud-bigquery
+# google-cloud-bigquery-storage
+# db-dtypes
+# PostgreSQL dependencies
+psycopg2-binary
+sqlalchemy
 plotly
 streamlit-plotly-events
 python-dotenv

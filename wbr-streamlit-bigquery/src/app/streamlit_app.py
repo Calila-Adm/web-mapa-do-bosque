@@ -8,7 +8,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from src.utils.env import load_environment_variables
-from src.data.bigquery_client import BigQueryClient
+# from src.data.bigquery_client import BigQueryClient  # Comentado - usando factory agora
+from src.data.database_factory import get_database_client, get_table_config, fetch_data_generic
 from src.wbr import gerar_grafico_wbr
 from src.wbr.kpis import calcular_kpis
 
@@ -17,53 +18,56 @@ APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 PROJECT_ROOT = os.path.abspath(os.path.join(APP_ROOT, '..'))
 load_environment_variables(base_dir=PROJECT_ROOT)
 
-# Normalize credential path to absolute (if relative)
-cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-if cred_path and not os.path.isabs(cred_path):
-    abs_path = os.path.join(PROJECT_ROOT, cred_path)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = abs_path
+# Database configuration
+db_type = os.getenv("DB_TYPE", "bigquery").lower()
 
-# Initialize the BigQuery client
-bq_client = BigQueryClient()
+# Normalize credential path for BigQuery (if using BigQuery)
+if db_type == "bigquery":
+    cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if cred_path and not os.path.isabs(cred_path):
+        abs_path = os.path.join(PROJECT_ROOT, cred_path)
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = abs_path
+
+# Initialize the database client using factory
+db_client = get_database_client()
 
 # Page configuration
 st.set_page_config(page_title="WBR Dashboard", layout="wide", page_icon="📊")
 
-# Hardcoded configurations for each table
-TABLES_CONFIG = {
-    'pessoas': {
-        'table': 'brief_fluxo_de_pessoas',
-        'date_col': 'data_de_entrada',
-        'metric_col': 'quantidade_de_registros_de_entrada',
-        'titulo': 'Fluxo de Pessoas',
-        'unidade': 'pessoas',
-        'icon': '👥',
-        'color': '#1E90FF'  # Blue
-    },
-    'veiculos': {
-        'table': 'brief_fluxo_de_veiculos',
-        'date_col': 'data_fluxo',
-        'metric_col': 'entradas_veiculos',
-        'titulo': 'Fluxo de Veículos',
-        'unidade': 'veículos',
-        'icon': '🚗',
-        'color': '#FF6B6B'  # Red
-    }
-}
+# Get table configurations based on database type
+TABLES_CONFIG = get_table_config(db_type)
 
-# Get BigQuery configuration from environment
-BQ_PROJECT = os.getenv("BIGQUERY_PROJECT_ID")
-BQ_DATASET = os.getenv("BIGQUERY_DATASET")
-
-# Check if BigQuery is configured
-if not BQ_PROJECT or not BQ_DATASET:
-    st.error("❌ Configuração do BigQuery não encontrada!")
-    st.info("Configure as seguintes variáveis de ambiente:")
-    st.code("""
-    BIGQUERY_PROJECT_ID=seu-projeto
-    BIGQUERY_DATASET=seu-dataset
-    GOOGLE_APPLICATION_CREDENTIALS=caminho/para/credentials.json
-    """)
+# Check database configuration
+if db_type == "bigquery":
+    BQ_PROJECT = os.getenv("BIGQUERY_PROJECT_ID")
+    BQ_DATASET = os.getenv("BIGQUERY_DATASET")
+    if not BQ_PROJECT or not BQ_DATASET:
+        st.error("❌ Configuração do BigQuery não encontrada!")
+        st.info("Configure as seguintes variáveis de ambiente:")
+        st.code("""
+        BIGQUERY_PROJECT_ID=seu-projeto
+        BIGQUERY_DATASET=seu-dataset
+        GOOGLE_APPLICATION_CREDENTIALS=caminho/para/credentials.json
+        """)
+        st.stop()
+elif db_type in ["postgresql", "postgres"]:
+    # Check PostgreSQL configuration
+    if not os.getenv("DATABASE_URL") and not (os.getenv("POSTGRES_DATABASE") and os.getenv("POSTGRES_USER")):
+        st.error("❌ Configuração do PostgreSQL não encontrada!")
+        st.info("Configure DATABASE_URL ou as variáveis individuais:")
+        st.code("""
+        DATABASE_URL=postgresql://user:password@host:port/dbname
+        # OU
+        POSTGRES_HOST=localhost
+        POSTGRES_PORT=5432
+        POSTGRES_DATABASE=seu-banco
+        POSTGRES_USER=seu-usuario
+        POSTGRES_PASSWORD=sua-senha
+        """)
+        st.stop()
+else:
+    st.error(f"❌ Tipo de banco de dados não reconhecido: {db_type}")
+    st.info("Configure DB_TYPE como 'bigquery' ou 'postgresql' no arquivo .env")
     st.stop()
 
 # Title and description
@@ -112,20 +116,25 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.caption(f"🔗 Conectado a: {BQ_PROJECT}.{BQ_DATASET}")
+    # Mostra informação de conexão apropriada
+    if db_type == "bigquery":
+        st.caption(f"🔗 Conectado a: BigQuery - {os.getenv('BIGQUERY_PROJECT_ID')}.{os.getenv('BIGQUERY_DATASET')}")
+    else:
+        db_info = os.getenv('POSTGRES_DATABASE', 'PostgreSQL')
+        host_info = os.getenv('POSTGRES_HOST', 'localhost')
+        st.caption(f"🔗 Conectado a: PostgreSQL - {db_info}@{host_info}")
 
 # Cache function for loading data
 @st.cache_data(ttl=300, show_spinner=False)  # Cache for 5 minutes
-def load_table_data(config: dict, project: str, dataset: str):
-    """Load data from BigQuery for a specific table configuration"""
+def load_table_data(config: dict):
+    """Load data from database for a specific table configuration"""
     try:
-        df = bq_client.fetch_wbr_data(
-            project_id=project,
-            dataset=dataset,
-            table=config['table'],
-            date_col=config['date_col'],
-            metric_col=config['metric_col'],
-            shopping_col=shopping_col if filtro_shopping else None
+        # Use the generic fetch function from factory
+        df = fetch_data_generic(
+            client=db_client,
+            config=config,
+            year_filter=None,  # Applied later in apply_filters
+            shopping_filter=None  # Applied later in apply_filters
         )
         return df
     except Exception as e:
@@ -231,8 +240,8 @@ def render_chart(config: dict, df: pd.DataFrame):
 
 # Load data for both tables
 with st.spinner("Carregando dados..."):
-    df_pessoas = load_table_data(TABLES_CONFIG['pessoas'], BQ_PROJECT, BQ_DATASET)
-    df_veiculos = load_table_data(TABLES_CONFIG['veiculos'], BQ_PROJECT, BQ_DATASET)
+    df_pessoas = load_table_data(TABLES_CONFIG['pessoas'])
+    df_veiculos = load_table_data(TABLES_CONFIG['veiculos'])
     
     # Apply filters
     df_pessoas_filtered = apply_filters(df_pessoas, filtro_ano, filtro_shopping) if df_pessoas is not None else None
