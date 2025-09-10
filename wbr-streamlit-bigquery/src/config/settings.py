@@ -1,16 +1,46 @@
+"""
+Configurações centralizadas do aplicativo.
+"""
+
 import os
+from pathlib import Path
+from typing import Dict, Any
 
-class Settings:
-    def __init__(self):
-        self.BIGQUERY_PROJECT_ID = os.getenv("BIGQUERY_PROJECT_ID")
-        self.BIGQUERY_DATASET = os.getenv("BIGQUERY_DATASET")
-        self.BIGQUERY_PRIVATE_KEY = os.getenv("BIGQUERY_PRIVATE_KEY")
-        self.BIGQUERY_CLIENT_EMAIL = os.getenv("BIGQUERY_CLIENT_EMAIL")
-        self.STREAMLIT_PORT = int(os.getenv("STREAMLIT_PORT", 8501))
-        self.STREAMLIT_SERVER_ADDRESS = os.getenv("STREAMLIT_SERVER_ADDRESS", "localhost")
+# Paths
+BASE_DIR = Path(__file__).parent.parent.parent
+DATA_DIR = BASE_DIR / "data"
+LOGS_DIR = BASE_DIR / "logs"
 
-    def validate(self):
-        if not all([self.BIGQUERY_PROJECT_ID, self.BIGQUERY_DATASET, self.BIGQUERY_PRIVATE_KEY, self.BIGQUERY_CLIENT_EMAIL]):
-            raise ValueError("Missing required environment variables for BigQuery settings.")
+# Database Configuration
+DB_CONFIG = {
+    "type": os.getenv("DB_TYPE", "postgresql"),
+    "postgres": {
+        "schema": os.getenv("POSTGRES_SCHEMA", "mapa_do_bosque"),
+        "tables": {
+            "pessoas": os.getenv("POSTGRES_TABLE_PESSOAS", "fluxo_de_pessoas"),
+            "veiculos": os.getenv("POSTGRES_TABLE_VEICULOS", "fluxo_de_veiculos"),
+        }
+    },
+    "bigquery": {
+        "project": os.getenv("BIGQUERY_PROJECT_ID"),
+        "dataset": os.getenv("BIGQUERY_DATASET"),
+    }
+}
 
-settings = Settings()
+# Application Settings
+APP_CONFIG = {
+    "title": "WBR Dashboard",
+    "page_icon": "📊",
+    "layout": "wide",
+    "initial_sidebar_state": "expanded",
+}
+
+# Chart Settings
+CHART_CONFIG = {
+    "height": 400,
+    "template": "plotly_white",
+    "colors": {
+        "pessoas": "#1E90FF",
+        "veiculos": "#FF6B6B",
+    }
+}

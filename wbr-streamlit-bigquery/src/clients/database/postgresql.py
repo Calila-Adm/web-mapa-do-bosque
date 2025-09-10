@@ -7,6 +7,13 @@ from sqlalchemy.engine.url import make_url
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+# Carrega variáveis de ambiente
+from pathlib import Path
+project_root = Path(__file__).parent.parent.parent.parent
+if project_root.exists():
+    from ...utils.env import load_environment_variables
+    load_environment_variables(base_dir=str(project_root))
+
 
 class PostgreSQLClient:
     def __init__(self):
@@ -114,6 +121,11 @@ class PostgreSQLClient:
         
         # Usa pandas com SQLAlchemy engine (forma recomendada)
         df = pd.read_sql_query(query, engine)
+        
+        # Converte coluna 'date' para datetime se existir
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+        
         return df
 
     def fetch_wbr_data(self, *, schema: str | None = None, table: str | None = None,
@@ -123,8 +135,8 @@ class PostgreSQLClient:
 
         Uses POSTGRES_SCHEMA, POSTGRES_TABLE if args not provided.
         """
-        # Sempre usa o arquivo wbr.sql genérico
-        sql_path = os.path.join(os.path.dirname(__file__), 'queries', 'wbr.sql')
+        # Sempre usa o arquivo queries.sql genérico
+        sql_path = os.path.join(os.path.dirname(__file__), '..', 'sql', 'queries.sql')
         
         with open(sql_path, 'r') as file:
             query = file.read()
@@ -160,10 +172,11 @@ class PostgreSQLClient:
         query = query.replace('{{shopping_col}}', shopping_col)
         
         # 5. Filtro de data (PostgreSQL syntax)
-        # Calcula o início do ano passado e data atual
+        # Pega TRÊS anos de dados para garantir comparações completas
+        # Isso permite flexibilidade no frontend para filtrar conforme necessário
         date_filter = f"""
         DATE({date_col}) BETWEEN 
-            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year'
+            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
             AND CURRENT_DATE
         """
         query = query.replace('{{date_filter}}', date_filter)

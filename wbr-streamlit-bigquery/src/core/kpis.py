@@ -30,7 +30,6 @@ def calcular_kpis(df: pd.DataFrame, data_referencia: pd.Timestamp, coluna_data: 
     if metrica not in df.columns:
         raise ValueError(f"Column '{metrica}' not found in DataFrame columns: {df.columns.tolist()}")
     from pandas.tseries.offsets import DateOffset
-    from datetime import date
     from decimal import Decimal
 
     def _to_decimal(x):
@@ -57,14 +56,12 @@ def calcular_kpis(df: pd.DataFrame, data_referencia: pd.Timestamp, coluna_data: 
     fim_periodo_anterior = inicio_semana_anterior + timedelta(days=dias_decorridos_na_semana)
     semana_anterior = _to_decimal(df[(df.index >= inicio_semana_anterior) & (df.index <= fim_periodo_anterior)][metrica].sum())
 
-    semana_atual_iso = fim_semana_calendario.isocalendar()[1]
-    ano_anterior = data_ref_ts.year - 1
-    try:
-        fim_semana_py = pd.Timestamp(date.fromisocalendar(ano_anterior, semana_atual_iso, 7))
-    except ValueError:
-        fim_semana_py = pd.Timestamp(date.fromisocalendar(ano_anterior, 52, 7))
-
-    inicio_semana_py = (fim_semana_py - timedelta(days=6)).normalize()
+    # Metodologia de Deslocamento Fixo de 364 dias para comparação YoY semanal
+    # Garante alinhamento perfeito dos dias da semana (Segunda com Segunda, etc.)
+    OFFSET_DIAS_SEMANAL = 364  # 52 semanas × 7 dias
+    
+    # Calcula as datas PY aplicando o offset de 364 dias
+    inicio_semana_py = inicio_semana_calendario - timedelta(days=OFFSET_DIAS_SEMANAL)
     fim_periodo_py = inicio_semana_py + timedelta(days=dias_decorridos_na_semana)
     semana_py = _to_decimal(df[(df.index >= inicio_semana_py) & (df.index <= fim_periodo_py)][metrica].sum())
 

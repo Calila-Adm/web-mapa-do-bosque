@@ -13,11 +13,11 @@ def get_database_client():
     Returns:
         BigQueryClient ou PostgreSQLClient dependendo da configuração
     """
-    db_type = os.getenv("DB_TYPE", "bigquery").lower()
+    db_type = os.getenv("DB_TYPE", "postgresql").lower()
     
     if db_type == "postgresql" or db_type == "postgres":
         try:
-            from .postgresql_client import PostgreSQLClient
+            from .postgresql import PostgreSQLClient
             return PostgreSQLClient()
         except ImportError as e:
             raise ImportError(
@@ -27,7 +27,7 @@ def get_database_client():
     
     elif db_type == "bigquery":
         try:
-            from .bigquery_client import BigQueryClient
+            from .bigquery import BigQueryClient
             return BigQueryClient()
         except ImportError as e:
             raise ImportError(
@@ -53,7 +53,7 @@ def get_table_config(db_type: Optional[str] = None):
         Dict com configuração das tabelas
     """
     if db_type is None:
-        db_type = os.getenv("DB_TYPE", "bigquery").lower()
+        db_type = os.getenv("DB_TYPE", "postgresql").lower()
     
     if db_type in ["postgresql", "postgres"]:
         # Configuração para PostgreSQL
@@ -117,7 +117,7 @@ def fetch_data_generic(client, config, year_filter=None, shopping_filter=None):
     Returns:
         DataFrame com os dados
     """
-    db_type = os.getenv("DB_TYPE", "bigquery").lower()
+    db_type = os.getenv("DB_TYPE", "postgresql").lower()
     
     if db_type in ["postgresql", "postgres"]:
         # Para PostgreSQL

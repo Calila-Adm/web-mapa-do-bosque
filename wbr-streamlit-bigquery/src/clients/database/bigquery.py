@@ -33,7 +33,7 @@ class BigQueryClient:
         Uses BIGQUERY_PROJECT_ID, BIGQUERY_DATASET, BIGQUERY_TABLE if args not provided.
         Replaces backticked `your_project.your_dataset.your_table` in the SQL.
         """
-        sql_path = os.path.join(os.path.dirname(__file__), 'queries', 'wbr.sql')
+        sql_path = os.path.join(os.path.dirname(__file__), '..', 'sql', 'queries.sql')
         with open(sql_path, 'r') as file:
             query = file.read()
 

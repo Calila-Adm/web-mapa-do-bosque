@@ -10,6 +10,7 @@ __pycache__/
 .knowledge/
 .knowledge_cache/
 .copilot/
+.md/
 
 # macOS
 .DS_Store

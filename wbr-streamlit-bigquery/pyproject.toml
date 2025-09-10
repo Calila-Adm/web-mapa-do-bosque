@@ -1,18 +1,35 @@
 [tool.poetry]
-name = "wbr-streamlit-bigquery"
-version = "0.1.0"
-description = "A Streamlit application for visualizing WBR (Working Backwards) metrics using data from BigQuery."
-authors = ["Your Name <your.email@example.com>"]
-license = "MIT"
+name = "wbr-dashboard"
+version = "2.0.0"
+description = "Dashboard WBR com suporte para BigQuery e PostgreSQL"
+authors = ["Your Name <you@example.com>"]
+readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-streamlit = "^1.0.0"
-pandas = "^1.3.0"
-numpy = "^1.21.0"
-google-cloud-bigquery = "^2.30.0"
+streamlit = "^1.28.0"
+pandas = "^2.0.0"
+numpy = "^1.24.0"
 plotly = "^5.0.0"
+psycopg2-binary = "^2.9.0"
+sqlalchemy = "^2.0.0"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+mypy = "^1.0.0"
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

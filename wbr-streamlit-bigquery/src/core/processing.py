@@ -105,16 +105,20 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     inicio_ano_py = pd.Timestamp(year=ano_anterior, month=1, day=1)
     fim_ano_py = pd.Timestamp(year=ano_anterior, month=12, day=31)
 
-    # Semanas PY (mesma semana ISO)
-    from datetime import date
-    semana_atual = data_referencia.isocalendar()[1]
-    try:
-        fim_semana_py = date.fromisocalendar(ano_anterior, semana_atual, 7)
-        fim_semana_py = pd.Timestamp(fim_semana_py)
-    except ValueError:
-        fim_semana_py = pd.Timestamp(date.fromisocalendar(ano_anterior, 52, 7))
-
+    # Semanas PY usando metodologia de Deslocamento Fixo de 364 dias
+    # Esta abordagem garante que sempre comparamos o mesmo dia da semana
+    # Segunda com Segunda, Terça com Terça, etc.
+    # 364 dias = 52 semanas exatas, preservando o alinhamento semanal
+    
+    # Para PY, simplesmente voltamos 364 dias (52 semanas) para cada data CY
+    # Isso mantém o mesmo padrão semanal (fins de semana, dias úteis, etc.)
+    OFFSET_DIAS = 364  # 52 semanas × 7 dias
+    
+    # Calcula o período PY aplicando o offset de 364 dias
+    fim_semana_py = fim_semana - timedelta(days=OFFSET_DIAS)
     inicio_6sem_py = fim_semana_py - timedelta(weeks=6)
+    
+    # Obtém os dados PY para o período correspondente
     df_6sem_py = df_work[(df_work.index > inicio_6sem_py) & (df_work.index <= fim_semana_py)]
     semanas_py = df_6sem_py.resample('W').agg({coluna_metrica: 'sum'}).tail(6)
 
@@ -125,14 +129,18 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     df_12m_py = df_12m_py.reindex(idx_py)
     df_12m_py[coluna_metrica] = df_12m_py[coluna_metrica].fillna(0)
 
+    # Para PY, calculamos mês parcial baseado no offset de 364 dias
     mes_parcial_py = False
     dias_mes_parcial_py = 0
-    inicio_mes_py = fim_semana_py.replace(day=1)
-    fim_mes_py = (inicio_mes_py + pd.offsets.MonthEnd(1))
-    dados_mes_py = df_work[(df_work.index >= inicio_mes_py) & (df_work.index <= fim_semana_py)]
-    if not dados_mes_py.empty:
-        dias_mes_parcial_py = len(dados_mes_py.index.normalize().unique())
-        mes_parcial_py = fim_semana_py < fim_mes_py
+    
+    # Usa a data PY com offset de 364 dias para consistência
+    if fim_semana_py is not None:
+        inicio_mes_py = fim_semana_py.replace(day=1)
+        fim_mes_py = (inicio_mes_py + pd.offsets.MonthEnd(1))
+        dados_mes_py = df_work[(df_work.index >= inicio_mes_py) & (df_work.index <= fim_semana_py)]
+        if not dados_mes_py.empty:
+            dias_mes_parcial_py = len(dados_mes_py.index.normalize().unique())
+            mes_parcial_py = fim_semana_py < fim_mes_py
 
     return {
         'semanas_cy': semanas_cy,

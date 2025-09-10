@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+"""
+WBR Dashboard - Main Application Entry Point
+============================================
+Dashboard principal para análise de métricas WBR (Working Backwards Reporting).
+"""
+
 import os
 import sys
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
@@ -8,10 +15,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from src.utils.env import load_environment_variables
-# from src.data.bigquery_client import BigQueryClient  # Comentado - usando factory agora
-from src.data.database_factory import get_database_client, get_table_config, fetch_data_generic
-from src.wbr import gerar_grafico_wbr
-from src.wbr.kpis import calcular_kpis
+# from src.clients.database.bigquery import BigQueryClient  # Comentado - usando factory agora
+from src.clients.database.factory import get_database_client, get_table_config, fetch_data_generic
+from src.core.wbr import gerar_grafico_wbr
+from src.core.kpis import calcular_kpis
 
 # Load environment variables
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -19,7 +26,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(APP_ROOT, '..'))
 load_environment_variables(base_dir=PROJECT_ROOT)
 
 # Database configuration
-db_type = os.getenv("DB_TYPE", "bigquery").lower()
+db_type = os.getenv("DB_TYPE", "postgresql").lower()
 
 # Normalize credential path for BigQuery (if using BigQuery)
 if db_type == "bigquery":
@@ -78,24 +85,35 @@ st.markdown("---")
 with st.sidebar:
     st.header("🎯 Filtros")
     
-    # Date reference for calculations
+    # Date reference filter
+    st.subheader("📅 Data de Referência")
+    
     data_ref = st.date_input(
-        "📅 Data de Referência",
+        "Selecione a data",
         value=datetime.now(),
-        help="Data base para cálculos de KPIs"
+        help="Data final do período. O gráfico mostrará desde o início do ano anterior até esta data"
     )
-    # Normaliza para Timestamp para evitar comparações date vs datetime
+    
+    # Normaliza para Timestamp
     try:
         data_ref_ts = pd.Timestamp(data_ref)
     except Exception:
         data_ref_ts = pd.Timestamp(datetime.now())
     
-    # Year filter
-    filtro_ano = st.selectbox(
-        "📆 Ano",
-        options=[None] + list(range(2020, 2026)),
-        format_func=lambda x: "Todos os anos" if x is None else str(x)
-    )
+    # Calcula o período de análise baseado na data de referência
+    # Precisamos de DOIS anos de dados para comparação YoY
+    ano_ref = data_ref_ts.year
+    ano_anterior = ano_ref - 1
+    ano_inicio = ano_ref - 2  # Pega desde 2 anos atrás
+    
+    # Data inicial: 1º de janeiro de DOIS anos atrás
+    # Ex: Se data ref é 31/12/2024, pega desde 01/01/2023
+    data_inicio_ts = pd.Timestamp(f'{ano_anterior}-01-01')
+    # Data final: data selecionada
+    data_fim_ts = data_ref_ts
+    
+    st.caption(f"📊 Período: {data_inicio_ts.strftime('%d/%m/%Y')} até {data_fim_ts.strftime('%d/%m/%Y')}")
+    st.caption(f"📈 Comparando: {ano_ref} (até {data_ref_ts.strftime('%d/%m')}) vs {ano_anterior} (mesmo período)")
     
     # Shopping filter (optional - will be populated if column exists)
     shopping_col = os.getenv("WBR_SHOPPING_COL", "shopping")
@@ -141,14 +159,21 @@ def load_table_data(config: dict):
         st.error(f"Erro ao carregar {config['titulo']}: {str(e)}")
         return None
 
-def apply_filters(df: pd.DataFrame, year_filter=None, shopping_filter=None):
+def apply_filters(df: pd.DataFrame, date_start=None, date_end=None, year_filter=None, shopping_filter=None):
     """Apply filters to dataframe"""
     if df is None or df.empty:
         return df
     
-    # Apply year filter
-    if year_filter:
-        # Support both when 'date' is a column or the index
+    # Apply date range filter
+    if date_start and date_end:
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df[(df['date'] >= date_start) & (df['date'] <= date_end)]
+        elif isinstance(df.index, pd.DatetimeIndex):
+            df = df[(df.index >= date_start) & (df.index <= date_end)]
+    
+    # Apply year filter (if no date range specified)
+    elif year_filter:
         if 'date' in df.columns:
             df = df[pd.to_datetime(df['date']).dt.year == year_filter]
         elif isinstance(df.index, pd.DatetimeIndex):
@@ -244,8 +269,21 @@ with st.spinner("Carregando dados..."):
     df_veiculos = load_table_data(TABLES_CONFIG['veiculos'])
     
     # Apply filters
-    df_pessoas_filtered = apply_filters(df_pessoas, filtro_ano, filtro_shopping) if df_pessoas is not None else None
-    df_veiculos_filtered = apply_filters(df_veiculos, filtro_ano, filtro_shopping) if df_veiculos is not None else None
+    df_pessoas_filtered = apply_filters(
+        df_pessoas, 
+        date_start=data_inicio_ts,
+        date_end=data_fim_ts,
+        year_filter=None,
+        shopping_filter=filtro_shopping
+    ) if df_pessoas is not None else None
+    
+    df_veiculos_filtered = apply_filters(
+        df_veiculos,
+        date_start=data_inicio_ts,
+        date_end=data_fim_ts,
+        year_filter=None,
+        shopping_filter=filtro_shopping
+    ) if df_veiculos is not None else None
 
 # Render based on selected layout
 if layout_opcao == "Lado a lado":
