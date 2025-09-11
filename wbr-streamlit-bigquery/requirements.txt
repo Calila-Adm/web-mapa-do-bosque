@@ -1,14 +1,16 @@
-streamlit
-pandas
-numpy
+streamlit>=1.28.0
+pandas>=2.0.0
+numpy>=1.24.0
 # BigQuery dependencies (comentado para uso futuro)
 # google-cloud-bigquery
 # google-cloud-bigquery-storage
 # db-dtypes
 # PostgreSQL dependencies
-psycopg2-binary
-sqlalchemy
-plotly
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+plotly>=5.14.0
 streamlit-plotly-events
-python-dotenv
-pytest
+python-dotenv>=1.0.0
+python-dateutil>=2.8.2  # For relativedelta in WBR metrics
+pytest>=7.4.0
+pytest-cov>=4.1.0  # For test coverage

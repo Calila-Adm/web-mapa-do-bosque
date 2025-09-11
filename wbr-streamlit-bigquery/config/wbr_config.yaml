@@ -1,0 +1,115 @@
+# WBR System Configuration
+# Configuration for Weekly Business Review metrics analysis
+
+# Analysis Parameters
+wbr:
+  num_weeks: 6  # Number of weeks in trailing window
+  week_ending_day: 5  # 1=Monday, 5=Friday, 7=Sunday
+  cache_enabled: true
+  validate_data: true
+  
+# Metric Aggregation Rules
+aggregation:
+  default_method: "sum"  # Default aggregation for numeric columns
+  custom_rules:
+    metric_value: "sum"
+    orders: "sum"
+    revenue: "sum"
+    sessions: "sum"
+    conversion_rate: "mean"
+    average_order_value: "mean"
+    bounce_rate: "mean"
+
+# Metric Classification
+metrics:
+  value_metrics:  # Absolute value metrics
+    - orders
+    - revenue
+    - sessions
+    - conversions
+    - users
+    - page_views
+    - metric_value
+  
+  ratio_metrics:  # Percentage/ratio metrics
+    - conversion_rate
+    - bounce_rate
+    - click_through_rate
+    - average_order_value
+  
+  count_metrics:  # Count-based metrics
+    - unique_visitors
+    - new_users
+    - returning_users
+
+# Derived Metrics Configuration
+derived_metrics:
+  - name: "conversion_rate"
+    type: "division"
+    numerator: "conversions"
+    denominator: "sessions"
+    handle_zero: "zero"
+    description: "Conversion rate (%)"
+  
+  - name: "average_order_value"
+    type: "division"
+    numerator: "revenue"
+    denominator: "orders"
+    handle_zero: "nan"
+    description: "Average order value"
+  
+  - name: "revenue_per_session"
+    type: "division"
+    numerator: "revenue"
+    denominator: "sessions"
+    handle_zero: "zero"
+    description: "Revenue per session"
+
+# Comparison Thresholds
+thresholds:
+  wow_significant_change: 10  # % change to be considered significant
+  yoy_significant_change: 20  # % change to be considered significant
+  improvement_direction:
+    # Define which direction is considered improvement
+    revenue: "increase"
+    orders: "increase"
+    bounce_rate: "decrease"
+    conversion_rate: "increase"
+
+# Display Settings
+display:
+  decimal_places: 2
+  percentage_format: "{:.1f}%"
+  currency_format: "R$ {:,.2f}"
+  date_format: "%Y-%m-%d"
+  
+# Performance Settings
+performance:
+  max_cache_size: 128  # Maximum number of cached calculations
+  parallel_processing: false  # Enable parallel processing (future feature)
+  chunk_size: 10000  # Rows to process at once for large datasets
+
+# Data Validation Rules
+validation:
+  required_columns:
+    - date
+    - metric_value
+  date_column_names:  # Acceptable date column names
+    - date
+    - Date
+    - data
+    - datetime
+  max_missing_data_percent: 30  # Maximum % of missing data allowed
+  outlier_detection: false  # Enable outlier detection
+  outlier_std_threshold: 3  # Standard deviations for outlier detection
+
+# Export Settings
+export:
+  formats:
+    - excel
+    - csv
+    - json
+    - parquet
+  include_metadata: true
+  include_comparisons: true
+  include_summary: true

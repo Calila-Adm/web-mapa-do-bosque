@@ -17,8 +17,8 @@ from datetime import datetime
 from src.utils.env import load_environment_variables
 # from src.clients.database.bigquery import BigQueryClient  # Comentado - usando factory agora
 from src.clients.database.factory import get_database_client, get_table_config, fetch_data_generic
-from src.core.wbr import gerar_grafico_wbr
-from src.core.kpis import calcular_kpis
+from src.core.wbr import gerar_grafico_wbr, calcular_metricas_wbr
+from src.core.wbr_metrics import calcular_kpis  # Now using unified wbr_metrics
 
 # Load environment variables
 APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -77,9 +77,72 @@ else:
     st.info("Configure DB_TYPE como 'bigquery' ou 'postgresql' no arquivo .env")
     st.stop()
 
+# Cache function for getting available date range
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour
+def get_available_date_range():
+    """Get the min and max dates available in the database - optimized version"""
+    try:
+        dates = []
+        
+        # For BigQuery, we can optimize with a specific query
+        if db_type == "bigquery":
+            for table_name in ['pessoas', 'veiculos']:
+                config = TABLES_CONFIG[table_name]
+                query = f"""
+                SELECT 
+                    MIN({config['coluna_data']}) as min_date,
+                    MAX({config['coluna_data']}) as max_date
+                FROM `{config['table']}`
+                WHERE {config['coluna_data']} IS NOT NULL
+                """
+                try:
+                    result = db_client.query(query).to_dataframe()
+                    if not result.empty:
+                        dates.extend([result['min_date'].iloc[0], result['max_date'].iloc[0]])
+                except Exception:
+                    pass
+        else:
+            # For PostgreSQL or other databases, load minimal data
+            for table_name in ['pessoas', 'veiculos']:
+                config = TABLES_CONFIG[table_name]
+                try:
+                    # Try to get just the date column
+                    df = fetch_data_generic(
+                        client=db_client,
+                        config=config,
+                        year_filter=None,
+                        shopping_filter=None
+                    )
+                    
+                    if df is not None and not df.empty:
+                        if 'date' in df.columns:
+                            df['date'] = pd.to_datetime(df['date'])
+                            dates.extend([df['date'].min(), df['date'].max()])
+                        elif isinstance(df.index, pd.DatetimeIndex):
+                            dates.extend([df.index.min(), df.index.max()])
+                except Exception:
+                    pass
+        
+        if dates:
+            # Filter out None/NaT values
+            valid_dates = [d for d in dates if pd.notna(d)]
+            if valid_dates:
+                min_date = min(valid_dates)
+                max_date = max(valid_dates)
+                return pd.Timestamp(min_date), pd.Timestamp(max_date)
+        
+        return None, None
+            
+    except Exception as e:
+        st.error(f"Erro ao buscar range de datas: {str(e)}")
+        return None, None
+
 # Title and description
 st.title("📊 Dashboard WBR - Análise de Fluxo")
 st.markdown("---")
+
+# Get available date range before showing the sidebar
+min_date_available, max_date_available = get_available_date_range()
 
 # Sidebar with filters only (no BigQuery configuration)
 with st.sidebar:
@@ -88,17 +151,41 @@ with st.sidebar:
     # Date reference filter
     st.subheader("📅 Data de Referência")
     
-    data_ref = st.date_input(
-        "Selecione a data",
-        value=datetime.now(),
-        help="Data final do período. O gráfico mostrará desde o início do ano anterior até esta data"
-    )
+    # Check if we have data available
+    if min_date_available is not None and max_date_available is not None:
+        # Convert to date objects for the date_input widget
+        min_date = min_date_available.date() if hasattr(min_date_available, 'date') else min_date_available
+        max_date = max_date_available.date() if hasattr(max_date_available, 'date') else max_date_available
+        
+        # Default value should be the most recent date with data, not today
+        default_date = max_date
+        
+        # Show available date range
+        st.caption(f"📊 Dados disponíveis: {min_date.strftime('%d/%m/%Y')} até {max_date.strftime('%d/%m/%Y')}")
+        
+        data_ref = st.date_input(
+            "Selecione a data",
+            value=default_date,
+            min_value=min_date,
+            max_value=max_date,
+            help=f"Selecione uma data entre {min_date.strftime('%d/%m/%Y')} e {max_date.strftime('%d/%m/%Y')}"
+        )
+    else:
+        # No data available or error loading data
+        st.error("⚠️ Não foi possível determinar o período de dados disponível")
+        st.info("Verifique a conexão com o banco de dados")
+        # Use a fallback date input without restrictions
+        data_ref = st.date_input(
+            "Selecione a data",
+            value=datetime.now(),
+            help="Data final do período"
+        )
     
     # Normaliza para Timestamp
     try:
         data_ref_ts = pd.Timestamp(data_ref)
     except Exception:
-        data_ref_ts = pd.Timestamp(datetime.now())
+        data_ref_ts = pd.Timestamp(datetime.now() if max_date_available is None else max_date_available)
     
     # Calcula o período de análise baseado na data de referência
     # Precisamos de DOIS anos de dados para comparação YoY
@@ -106,11 +193,23 @@ with st.sidebar:
     ano_anterior = ano_ref - 1
     ano_inicio = ano_ref - 2  # Pega desde 2 anos atrás
     
-    # Data inicial: 1º de janeiro de DOIS anos atrás
-    # Ex: Se data ref é 31/12/2024, pega desde 01/01/2023
+    # Data inicial: 1º de janeiro do ano anterior
+    # Para garantir que temos dados suficientes para comparação
     data_inicio_ts = pd.Timestamp(f'{ano_anterior}-01-01')
+    
+    # Se a data inicial calculada está antes dos dados disponíveis, ajusta
+    if min_date_available is not None and data_inicio_ts < min_date_available:
+        data_inicio_ts = min_date_available
+        st.warning(f"⚠️ Ajustado início para {data_inicio_ts.strftime('%d/%m/%Y')} (primeiro dado disponível)")
+    
     # Data final: data selecionada
     data_fim_ts = data_ref_ts
+    
+    # Validação adicional: verifica se temos dados suficientes para comparação YoY
+    if min_date_available is not None and max_date_available is not None:
+        dias_disponiveis = (max_date_available - min_date_available).days
+        if dias_disponiveis < 365:
+            st.warning(f"⚠️ Apenas {dias_disponiveis} dias de dados disponíveis. Comparação YoY pode ser limitada.")
     
     st.caption(f"📊 Período: {data_inicio_ts.strftime('%d/%m/%Y')} até {data_fim_ts.strftime('%d/%m/%Y')}")
     st.caption(f"📈 Comparando: {ano_ref} (até {data_ref_ts.strftime('%d/%m')}) vs {ano_anterior} (mesmo período)")
@@ -338,6 +437,90 @@ else:  # Abas
             render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
         else:
             st.warning("Nenhum dado de veículos encontrado")
+
+# Advanced WBR Metrics Section
+st.markdown("---")
+st.header("📊 Métricas WBR Avançadas")
+
+with st.expander("🔍 Análise Detalhada de Métricas WBR", expanded=False):
+    # Check if we have data to analyze
+    if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
+        st.subheader("Pessoas - Análise WOW/YOY")
+        
+        # Calculate advanced metrics
+        metricas_derivadas = {
+            'taxa_crescimento': {
+                'type': 'division',
+                'numerator': 'metric_value',
+                'denominator': 'metric_value',
+                'description': 'Taxa de crescimento relativa'
+            }
+        } if 'metric_value' in df_pessoas_filtered.columns else None
+        
+        metrics_result = calcular_metricas_wbr(
+            df_pessoas_filtered,
+            data_referencia=data_ref_ts,
+            coluna_data='date',
+            coluna_metrica='metric_value',
+            metricas_derivadas=metricas_derivadas
+        )
+        
+        if metrics_result.get('success'):
+            # Display comparisons
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric(
+                    "Métricas Analisadas",
+                    metrics_result.get('metrics_analyzed', 0)
+                )
+            
+            with col2:
+                summary = metrics_result.get('summary', [])
+                if summary:
+                    avg_wow = sum(s.get('WOW_%', 0) or 0 for s in summary) / len(summary)
+                    st.metric(
+                        "WOW Médio",
+                        f"{avg_wow:.1f}%",
+                        delta=f"{avg_wow:.1f}%"
+                    )
+            
+            with col3:
+                if summary:
+                    avg_yoy = sum(s.get('YOY_%', 0) or 0 for s in summary) / len(summary)
+                    st.metric(
+                        "YOY Médio",
+                        f"{avg_yoy:.1f}%",
+                        delta=f"{avg_yoy:.1f}%"
+                    )
+            
+            # Show summary table
+            if summary:
+                st.subheader("📈 Resumo de Métricas")
+                summary_df = pd.DataFrame(summary)
+                st.dataframe(
+                    summary_df,
+                    width='stretch',
+                    hide_index=True
+                )
+            
+            # Show trailing weeks comparison
+            st.subheader("📅 Comparação de Semanas")
+            tab1, tab2 = st.tabs(["Ano Atual", "Ano Anterior"])
+            
+            with tab1:
+                cy_data = metrics_result.get('trailing_weeks', {}).get('current_year', [])
+                if cy_data:
+                    st.dataframe(pd.DataFrame(cy_data), width='stretch', hide_index=True)
+            
+            with tab2:
+                py_data = metrics_result.get('trailing_weeks', {}).get('previous_year', [])
+                if py_data:
+                    st.dataframe(pd.DataFrame(py_data), width='stretch', hide_index=True)
+        else:
+            st.warning(f"Não foi possível calcular métricas avançadas: {metrics_result.get('error', 'Erro desconhecido')}")
+    else:
+        st.info("Carregue dados primeiro para ver as métricas WBR avançadas")
 
 # Footer
 st.markdown("---")

@@ -28,4 +28,4 @@ def render_metrics_row(metrics: Dict[str, Any]):
 def render_chart_container(chart_config: Dict[str, Any]):
     """Renderiza um container para gráficos."""
     with st.container():
-        st.plotly_chart(chart_config['figure'], use_container_width=True)
+        st.plotly_chart(chart_config['figure'], width='stretch')

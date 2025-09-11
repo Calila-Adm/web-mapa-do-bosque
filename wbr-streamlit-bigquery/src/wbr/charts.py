@@ -1,8 +1,9 @@
 import pandas as pd
 import plotly.graph_objects as go
-from decimal import Decimal
 
+from .kpis import calcular_kpis
 from .processing import COLUNA_METRICA as _COLUNA_METRICA
+from decimal import Decimal
 
 
 def formatar_valor(valor, tipo='numero'):
@@ -102,131 +103,28 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
 
     fig = go.Figure()
 
-    # Adiciona trace PY para semanas, considerando se há semana parcial
-    semana_parcial = dados.get('semana_parcial', False)
-    if semana_parcial and len(valores_py_semanas_clean) > 0:
-        # Separa semanas completas da parcial
-        x_completo_sem = x_semanas[:-1] if len(x_semanas) > 1 else []
-        y_completo_sem = valores_py_semanas_clean[:-1] if len(valores_py_semanas_clean) > 1 else []
-        x_parcial_sem = x_semanas[-1:] if len(x_semanas) > 0 else []
-        y_parcial_sem = valores_py_semanas_clean[-1:] if len(valores_py_semanas_clean) > 0 else []
-        
-        # Trace para semanas completas PY
-        if len(x_completo_sem) > 0:
-            fig.add_trace(go.Scatter(
-                x=x_completo_sem,
-                y=y_completo_sem,
-                name=f'{unidade.upper()} {ano_anterior} (Semanas)',
-                line=dict(color="#D685AB", width=1.5),
-                mode='lines',
-                connectgaps=False,
-                hovertemplate='%{y:,.0f}<extra></extra>',
-                yaxis='y'
-            ))
-        
-        # Trace para semana parcial PY (tracejado)
-        if len(x_parcial_sem) > 0:
-            # Adiciona apenas o ponto parcial
-            fig.add_trace(go.Scatter(
-                x=x_parcial_sem,
-                y=y_parcial_sem,
-                name=f'{unidade.upper()} {ano_anterior}',  # Removido "(Semana Parcial)"
-                mode='markers',  # Apenas marcador
-                marker=dict(color="#D685AB", size=6),
-                connectgaps=False,
-                hovertemplate='%{y:,.0f} (parcial)<extra></extra>',
-                yaxis='y',
-                showlegend=False
-            ))
-            
-            # Linha tracejada conectando
-            if len(x_completo_sem) > 0:
-                fig.add_trace(go.Scatter(
-                    x=[x_completo_sem[-1], x_parcial_sem[0]],
-                    y=[y_completo_sem[-1], y_parcial_sem[0]],
-                    line=dict(color="#D685AB", width=1.5, dash='dash'),
-                    mode='lines',
-                    connectgaps=False,
-                    hoverinfo='skip',
-                    yaxis='y',
-                    showlegend=False
-                ))
-    else:
-        # Sem semana parcial - trace normal
-        fig.add_trace(go.Scatter(
-            x=x_semanas,
-            y=valores_py_semanas_clean,
-            name=f'{unidade.upper()} {ano_anterior} (Semanas)',
-            line=dict(color="#D685AB", width=1.5),
-            mode='lines',
-            connectgaps=False,
-            hovertemplate='%{y:,.0f}<extra></extra>',
-            yaxis='y'
-        ))
+    fig.add_trace(go.Scatter(
+        x=x_semanas,
+        y=valores_py_semanas_clean,
+        name=f'{unidade.upper()} {ano_anterior} (Semanas)',
+        line=dict(color="#D685AB", width=1.5),
+        mode='lines',
+        connectgaps=False,
+        hovertemplate='%{y:,.0f}<extra></extra>',
+        yaxis='y'
+    ))
 
-    # Adiciona trace CY para semanas, considerando se há semana parcial
-    if semana_parcial and len(valores_cy_semanas_clean) > 0:
-        # Separa semanas completas da parcial
-        x_completo_cy = x_semanas[:-1] if len(x_semanas) > 1 else []
-        y_completo_cy = valores_cy_semanas_clean[:-1] if len(valores_cy_semanas_clean) > 1 else []
-        x_parcial_cy = x_semanas[-1:] if len(x_semanas) > 0 else []
-        y_parcial_cy = valores_cy_semanas_clean[-1:] if len(valores_cy_semanas_clean) > 0 else []
-        
-        # Trace para semanas completas CY
-        if len(x_completo_cy) > 0:
-            fig.add_trace(go.Scatter(
-                x=x_completo_cy,
-                y=y_completo_cy,
-                name=f'{unidade.upper()} {ano_atual} (Semanas)',
-                line=dict(color="#000075", width=2.5, shape='spline', smoothing=1.3),
-                mode='lines+markers',
-                marker=dict(color='#00008B', size=8, symbol='diamond'),
-                connectgaps=False,
-                hovertemplate='%{y:,.0f}<extra></extra>',
-                yaxis='y'
-            ))
-        
-        # Trace para semana parcial CY (tracejado com marcador aberto)
-        if len(x_parcial_cy) > 0:
-            # Para evitar tooltip duplicado, só adiciona o ponto parcial
-            fig.add_trace(go.Scatter(
-                x=x_parcial_cy,
-                y=y_parcial_cy,
-                name=f'{unidade.upper()} {ano_atual}',  # Removido "(Semana Parcial)"
-                line=dict(color="#000075", width=2.5, dash='dash'),
-                mode='markers',  # Apenas marcador, sem linha
-                marker=dict(color='#00008B', size=8, symbol='diamond-open'),
-                connectgaps=False,
-                hovertemplate='%{y:,.0f} (parcial)<extra></extra>',
-                yaxis='y',
-                showlegend=False  # Oculta da legenda para não duplicar
-            ))
-            
-            # Adiciona linha tracejada conectando com a semana anterior
-            if len(x_completo_cy) > 0:
-                fig.add_trace(go.Scatter(
-                    x=[x_completo_cy[-1], x_parcial_cy[0]],
-                    y=[y_completo_cy[-1], y_parcial_cy[0]],
-                    line=dict(color="#000075", width=2.5, dash='dash'),
-                    mode='lines',
-                    connectgaps=False,
-                    hoverinfo='skip',  # Sem hover para evitar duplicação
-                    yaxis='y',
-                    showlegend=False
-                ))
-    else:
-        # Sem semana parcial - trace normal
-        fig.add_trace(go.Scatter(
-            x=x_semanas,
-            y=valores_cy_semanas_clean,
-            name=f'{unidade.upper()} {ano_atual} (Semanas)',
-            line=dict(color="#000075", width=2.5, shape='spline', smoothing=1.3),
-            mode='lines+markers',
-            marker=dict(color='#00008B', size=8, symbol='diamond'),
-            connectgaps=False,
-            hovertemplate='%{y:,.0f}<extra></extra>',
-            yaxis='y'
-        ))
+    fig.add_trace(go.Scatter(
+        x=x_semanas,
+        y=valores_cy_semanas_clean,
+        name=f'{unidade.upper()} {ano_atual} (Semanas)',
+        line=dict(color="#000075", width=2.5, shape='spline', smoothing=1.3),
+        mode='lines+markers',
+        marker=dict(color='#00008B', size=8, symbol='diamond'),
+        connectgaps=False,
+        hovertemplate='%{y:,.0f}<extra></extra>',
+        yaxis='y'
+    ))
 
     fig.add_trace(go.Scatter(
         x=x_meses,
@@ -240,53 +138,34 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
     ))
 
     if dados['mes_parcial_cy'] and any(not pd.isna(v) for v in valores_cy_meses):
-        # Separa meses completos do parcial
         x_completo = x_meses[:-1]
         y_completo = valores_cy_meses_clean[:-1]
-        x_parcial = x_meses[-1:]  # Apenas o último mês
-        y_parcial = valores_cy_meses_clean[-1:]
-        
-        # Trace para meses completos (sem conectar ao mês parcial)
+        x_parcial = x_meses[-2:] if len(x_meses) > 1 else x_meses
+        y_parcial = valores_cy_meses_clean[-2:] if len(valores_cy_meses_clean) > 1 else valores_cy_meses_clean
         if len(x_completo) > 0:
             fig.add_trace(go.Scatter(
                 x=x_completo,
                 y=y_completo,
                 name=f'{unidade.upper()} {ano_atual} (Meses)',
-                line=dict(color='#00008B', width=2.5),  # Removido spline para não interferir
+                line=dict(color='#00008B', width=2.5, shape='spline', smoothing=1.3),
                 mode='lines+markers',
                 marker=dict(color='#00008B', size=8, symbol='diamond'),
                 connectgaps=False,
                 hovertemplate='%{y:,.0f}<extra></extra>',
                 yaxis='y2',
-                showlegend=True  # Mostra na legenda já que é a linha principal
+                showlegend=False
             ))
-        
-        # Trace para o mês parcial (apenas o ponto com marcador aberto)
-        if len(x_parcial) > 0:
-            fig.add_trace(go.Scatter(
-                x=x_parcial,
-                y=y_parcial,
-                name=f'{unidade.upper()} {ano_atual} (Meses)',  # Nome consistente
-                mode='markers',  # Apenas marcador
-                marker=dict(color='#00008B', size=8, symbol='diamond-open'),
-                connectgaps=False,
-                hovertemplate='%{y:,.0f} (parcial)<extra></extra>',
-                yaxis='y2',
-                showlegend=False  # Oculta para não duplicar na legenda
-            ))
-            
-            # Linha tracejada conectando ao mês anterior
-            if len(x_completo) > 0:
-                fig.add_trace(go.Scatter(
-                    x=[x_completo[-1], x_parcial[0]],
-                    y=[y_completo[-1], y_parcial[0]],
-                    line=dict(color='#00008B', width=2.5, dash='dash'),
-                    mode='lines',
-                    connectgaps=False,
-                    hoverinfo='skip',  # Sem hover para evitar duplicação
-                    yaxis='y2',
-                    showlegend=False
-                ))
+        fig.add_trace(go.Scatter(
+            x=x_parcial,
+            y=y_parcial,
+            name=f'{unidade.upper()} {ano_atual} (Mês Parcial)',
+            line=dict(color='#00008B', width=2.5, dash='dash', shape='spline', smoothing=1.3),
+            mode='lines+markers',
+            marker=dict(color='#00008B', size=8, symbol='diamond-open'),
+            connectgaps=False,
+            hovertemplate='%{y:,.0f} (parcial)<extra></extra>',
+            yaxis='y2'
+        ))
     else:
         fig.add_trace(go.Scatter(
             x=x_meses,
@@ -349,8 +228,8 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         lo = min(nums)
         hi = max(nums)
         if lo == hi:
-            return [0, hi * 1.2 if hi != 0 else 1]
-        return [lo * 0.85, hi * 1.15]
+            return [0, float(hi) * 1.2 if hi != 0 else 1]
+        return [float(lo) * 0.85, float(hi) * 1.15]
 
     fig.update_layout(
         title={'text': titulo + nota_parcial, 'x': 0.5, 'xanchor': 'center', 'font': dict(size=20, color='black')},
@@ -395,54 +274,19 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         paper_bgcolor='white'
     )
 
-    # Calculate KPIs directly from the same weekly data used in the graph
-    # This ensures consistency between graph and KPI values
-    
-    # Get the last week value from the same data shown in the graph
-    ultima_semana = valores_cy_semanas[-1] if valores_cy_semanas else 0
-    
-    # Previous week for WOW calculation
-    semana_anterior = valores_cy_semanas[-2] if len(valores_cy_semanas) > 1 else 0
-    
-    # Last week from previous year for YOY
-    ultima_semana_py = valores_py_semanas[-1] if valores_py_semanas else 0
-    
-    # Calculate WOW (Week over Week)
-    wow_pct = 0
-    if semana_anterior and semana_anterior != 0:
-        wow_pct = ((ultima_semana / semana_anterior - 1) * 100) if ultima_semana else 0
-    
-    # Calculate YOY for week
-    yoy_semanal = 0
-    if ultima_semana_py and ultima_semana_py != 0:
-        yoy_semanal = ((ultima_semana / ultima_semana_py - 1) * 100) if ultima_semana else 0
-    
-    # Month calculations using the same processed data
-    mes_atual = sum(v for v in valores_cy_meses if v is not None and not pd.isna(v))
-    mes_py = sum(v for v in valores_py_meses if v is not None and not pd.isna(v))
-    
-    yoy_mensal = 0
-    if mes_py and mes_py != 0:
-        yoy_mensal = ((mes_atual / mes_py - 1) * 100) if mes_atual else 0
-    
-    # For now, use month values as proxies for quarter and year (simplified)
-    # In a full implementation, you'd calculate these from appropriate periods
-    trimestre_atual = mes_atual
-    yoy_trimestral = yoy_mensal
-    ano_atual = mes_atual
-    yoy_anual = yoy_mensal
-    
+    # Use the normalized column names that BigQuery client provides
+    kpis = calcular_kpis(df, data_ref, coluna_data='date', coluna_metrica='metric_value')
     kpi_headers = ['LastWk', 'WOW', 'YOY(Semana)', 'MTD', 'YOY(Mês)', 'QTD', 'YOY(Trimestre)', 'YTD', 'YOY(Ano)']
     kpi_values = [
-        formatar_valor(ultima_semana),
-        formatar_valor(wow_pct, 'percentual'),
-        formatar_valor(yoy_semanal, 'percentual'),
-        formatar_valor(mes_atual),
-        formatar_valor(yoy_mensal, 'percentual'),
-        formatar_valor(trimestre_atual),
-        formatar_valor(yoy_trimestral, 'percentual'),
-        formatar_valor(ano_atual),
-        formatar_valor(yoy_anual, 'percentual')
+        formatar_valor(kpis['ultima_semana']),
+        formatar_valor(kpis['var_semanal'], 'percentual'),
+        formatar_valor(kpis['yoy_semanal'], 'percentual'),
+        formatar_valor(kpis['mes_atual']),
+        formatar_valor(kpis['yoy_mensal'], 'percentual'),
+        formatar_valor(kpis['trimestre_atual']),
+        formatar_valor(kpis['yoy_trimestral'], 'percentual'),
+        formatar_valor(kpis['ano_atual']),
+        formatar_valor(kpis['yoy_anual'], 'percentual')
     ]
 
     for i, (header, value) in enumerate(zip(kpi_headers, kpi_values)):
