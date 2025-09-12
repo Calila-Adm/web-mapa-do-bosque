@@ -461,7 +461,7 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         autosize=True,  # Permite redimensionamento automático
         showlegend=True,
         legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5, bordercolor="lightgray", borderwidth=1, font=dict(size=11)),
-        margin=dict(t=60, b=80, l=50, r=50),  # Margem inferior reduzida - KPIs removidos
+        margin=dict(t=60, b=150, l=50, r=50),  # Margens otimizadas com KPIs
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
@@ -532,7 +532,17 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         formatar_valor(yoy_anual, 'percentual')
     ]
 
-    # KPIs removidos do gráfico conforme solicitado
-    # Os cálculos são mantidos mas as anotações visuais foram removidas
+    # Adicionar KPIs na parte inferior do gráfico
+    for i, (header, value) in enumerate(zip(kpi_headers, kpi_values)):
+        x_position = (i + 0.5) / 9
+        fig.add_annotation(x=x_position, y=-0.38, xref='paper', yref='paper', text=f"<b>{header}</b>", showarrow=False, font=dict(size=19, color='Black', family='Arial'), align='center', xanchor='center')
+        color = 'black'
+        if 'YOY' in header or 'WOW' in header:
+            try:
+                val_num = Decimal(str(value).replace('%', '').replace('+', ''))
+                color = 'darkgreen' if val_num > 0 else 'darkred' if val_num < 0 else 'black'
+            except Exception:
+                pass
+        fig.add_annotation(x=x_position, y=-0.44, xref='paper', yref='paper', text=value, showarrow=False, font=dict(size=18, color=color, family='Arial'), align='center', xanchor='center')
 
     return fig
