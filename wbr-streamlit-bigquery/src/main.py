@@ -160,8 +160,8 @@ with st.sidebar:
         # Default value should be the most recent date with data, not today
         default_date = max_date
         
-        # Show available date range
-        st.caption(f"📊 Dados disponíveis: {min_date.strftime('%d/%m/%Y')} até {max_date.strftime('%d/%m/%Y')}")
+        # Show available date range - REMOVIDO conforme solicitado
+        # st.caption(f"📊 Dados disponíveis: {min_date.strftime('%d/%m/%Y')} até {max_date.strftime('%d/%m/%Y')}")
         
         data_ref = st.date_input(
             "Selecione a data",
@@ -211,8 +211,7 @@ with st.sidebar:
         if dias_disponiveis < 365:
             st.warning(f"⚠️ Apenas {dias_disponiveis} dias de dados disponíveis. Comparação YoY pode ser limitada.")
     
-    st.caption(f"📊 Período: {data_inicio_ts.strftime('%d/%m/%Y')} até {data_fim_ts.strftime('%d/%m/%Y')}")
-    st.caption(f"📈 Comparando: {ano_ref} (até {data_ref_ts.strftime('%d/%m')}) vs {ano_anterior} (mesmo período)")
+    # Informações de período e comparação removidas conforme solicitado
     
     # Shopping filter (optional - will be populated if column exists)
     shopping_col = os.getenv("WBR_SHOPPING_COL", "shopping")
@@ -225,10 +224,10 @@ with st.sidebar:
     st.markdown("---")
     st.header("📐 Layout")
     
-    # Layout selector
+    # Layout selector - removida opção "Lado a lado"
     layout_opcao = st.radio(
         "Disposição dos gráficos:",
-        options=["Lado a lado", "Um abaixo do outro", "Abas"],
+        options=["Um abaixo do outro", "Abas"],
         help="Escolha como visualizar os gráficos"
     )
     
@@ -346,8 +345,8 @@ def render_chart(config: dict, df: pd.DataFrame):
         # Display chart
         st.plotly_chart(fig, width='stretch', key=f"chart_{config['table']}")
 
-        # Display metrics below chart
-        render_metrics(df, config['titulo'])
+        # Display metrics below chart - REMOVIDO conforme solicitado
+        # render_metrics(df, config['titulo'])
 
         # Optional: Show data preview
         with st.expander("📋 Ver dados brutos"):
@@ -356,8 +355,42 @@ def render_chart(config: dict, df: pd.DataFrame):
             # If reset_index created a column named 'index' and 'date' doesn't exist, rename it to 'date'
             if 'date' not in display_df.columns and 'index' in display_df.columns:
                 display_df = display_df.rename(columns={'index': 'date'})
-            cols = [c for c in ['date', 'metric_value'] if c in display_df.columns]
-            st.dataframe(display_df[cols].tail(30), width='stretch', hide_index=True)
+            
+            # Agrupar por data e somar metric_value para visualização diária
+            if 'date' in display_df.columns and 'metric_value' in display_df.columns:
+                # Garantir que date seja datetime
+                display_df['date'] = pd.to_datetime(display_df['date'])
+                # Agrupar por data (apenas a parte da data, sem hora)
+                daily_df = display_df.groupby(display_df['date'].dt.date).agg({
+                    'metric_value': 'sum'
+                }).reset_index()
+                daily_df.columns = ['Data', 'Total_Diario']
+                
+                # Ordenar por data (mais recente primeiro)
+                daily_df = daily_df.sort_values('Data', ascending=False)
+                
+                # Adicionar dia da semana
+                daily_df['Dia_Semana'] = pd.to_datetime(daily_df['Data']).dt.strftime('%a')
+                dias_pt = {'Mon': 'Seg', 'Tue': 'Ter', 'Wed': 'Qua', 'Thu': 'Qui', 
+                          'Fri': 'Sex', 'Sat': 'Sáb', 'Sun': 'Dom'}
+                daily_df['Dia_Semana'] = daily_df['Dia_Semana'].replace(dias_pt)
+                
+                # Formatar a data para exibição
+                daily_df['Data'] = pd.to_datetime(daily_df['Data']).dt.strftime('%d/%m/%Y')
+                
+                # Formatar o valor com separador de milhares
+                daily_df['Total_Diario'] = daily_df['Total_Diario'].apply(lambda x: f"{x:,.0f}")
+                
+                # Reorganizar colunas
+                daily_df = daily_df[['Data', 'Dia_Semana', 'Total_Diario']]
+                daily_df.columns = ['Data', 'Dia', 'Total Diário']
+                
+                # Mostrar últimos 30 dias
+                st.dataframe(daily_df.head(30), width='stretch', hide_index=True)
+            else:
+                # Fallback para o comportamento original se as colunas esperadas não existirem
+                cols = [c for c in ['date', 'metric_value'] if c in display_df.columns]
+                st.dataframe(display_df[cols].tail(30), width='stretch', hide_index=True)
 
     except Exception as e:
         st.error(f"Erro ao gerar gráfico: {str(e)}")
@@ -385,25 +418,7 @@ with st.spinner("Carregando dados..."):
     ) if df_veiculos is not None else None
 
 # Render based on selected layout
-if layout_opcao == "Lado a lado":
-    # Two columns layout
-    col1, col2 = st.columns(2, gap="medium")
-    
-    with col1:
-        st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
-        if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:
-            render_chart(TABLES_CONFIG['pessoas'], df_pessoas_filtered)
-        else:
-            st.warning("Nenhum dado de pessoas encontrado")
-    
-    with col2:
-        st.subheader(f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}")
-        if df_veiculos_filtered is not None and not df_veiculos_filtered.empty:
-            render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
-        else:
-            st.warning("Nenhum dado de veículos encontrado")
-
-elif layout_opcao == "Um abaixo do outro":
+if layout_opcao == "Um abaixo do outro":
     # Vertical layout
     st.subheader(f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}")
     if df_pessoas_filtered is not None and not df_pessoas_filtered.empty:

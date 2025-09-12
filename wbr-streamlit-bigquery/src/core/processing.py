@@ -120,51 +120,77 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     
     # Para comparação justa, PY deve ter apenas até o mesmo dia/mês que CY
     # Se CY está em 10/julho, PY deve mostrar apenas até 10/julho do ano anterior
-    fim_ano_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=data_referencia.day)
+    try:
+        fim_ano_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=data_referencia.day)
+    except ValueError:
+        # Caso especial: 29 de fevereiro -> 28 de fevereiro no ano não-bissexto
+        fim_ano_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=28)
 
     # Semanas PY - Comparação "Maçã com Maçã" 
-    # Usando offset de 364 dias (52 semanas) para manter alinhamento de dia da semana
-    OFFSET_DIAS = 364  # 52 semanas × 7 dias
+    # Usa as mesmas datas do calendário, apenas mudando o ano
+    # Isso garante comparação justa: 25-31 agosto 2025 vs 25-31 agosto 2024
+    
+    # Calcula a data equivalente no ano anterior (mesmo mês/dia)
+    try:
+        # Tenta criar a mesma data no ano anterior
+        data_ref_py = data_referencia.replace(year=ano_anterior)
+    except ValueError:
+        # Caso especial: 29 de fevereiro em ano bissexto -> 28 de fevereiro
+        data_ref_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=28)
     
     # Se CY tem semana parcial, PY também deve ter
     if semana_parcial:
-        # Calcula a data equivalente no ano anterior (mesmo dia da semana)
-        data_ref_py = data_referencia - timedelta(days=OFFSET_DIAS)
+        # Para PY, usa exatamente o mesmo período calendário
         fim_semana_py = data_ref_py
-        
-        # Para as 5 semanas anteriores completas, usa semanas completas
-        # Mas a última semana será parcial como em CY
-        inicio_6sem_py = fim_semana_py - timedelta(weeks=6)
+        # Calcula quantos dias atrás começou a semana em CY para aplicar o mesmo em PY
+        dias_desde_inicio_semana = (data_referencia - inicio_semana_atual).days
+        inicio_semana_py = data_ref_py - timedelta(days=dias_desde_inicio_semana)
+        # 6 semanas atrás mantendo o alinhamento
+        inicio_6sem_py = inicio_semana_py - timedelta(weeks=5)
     else:
-        # Semana completa - usa o período completo
-        fim_semana_py = fim_semana - timedelta(days=OFFSET_DIAS)
-        inicio_6sem_py = fim_semana_py - timedelta(weeks=6)
+        # Para semana completa, usa exatamente 7 dias terminando na mesma data
+        fim_semana_py = data_ref_py
+        # Retrocede exatamente 6 semanas (42 dias) a partir do fim
+        inicio_6sem_py = fim_semana_py - timedelta(days=41)  # 6 semanas = 42 dias, menos 1 pois é inclusive
     
-    # Obtém os dados PY para o período correspondente
-    df_6sem_py = df_work[(df_work.index > inicio_6sem_py) & (df_work.index <= fim_semana_py)]
+    # Para PY, vamos processar manualmente cada semana para garantir alinhamento exato de datas
+    semanas_py_list = []
     
-    # Processa as semanas, mas se a última é parcial, ajusta
-    if semana_parcial and not df_6sem_py.empty:
-        # Agrupa por semana
-        semanas_py_temp = df_6sem_py.resample('W-SUN').agg({coluna_metrica: 'sum'})
+    # Processa cada uma das 6 semanas com as mesmas datas do calendário
+    for i in range(6):
+        # Calcula o período da semana i (0 = 6 semanas atrás, 5 = semana atual)
+        semanas_atras = 5 - i
         
-        # Se temos dados, ajusta a última semana para ter apenas os dias equivalentes
-        if len(semanas_py_temp) > 0:
-            # Recalcula a última semana com apenas os dias necessários
-            inicio_ultima_semana_py = pd.Timestamp(data_ref_py).to_period('W-SUN').start_time
-            fim_parcial_py = inicio_ultima_semana_py + timedelta(days=dias_semana_parcial - 1)
-            
-            # Filtra dados da última semana parcial
-            df_ultima_semana = df_work[(df_work.index >= inicio_ultima_semana_py) & 
-                                       (df_work.index <= fim_parcial_py)]
-            
-            # Substitui o valor da última semana
-            if not df_ultima_semana.empty:
-                semanas_py_temp.iloc[-1] = df_ultima_semana[coluna_metrica].sum()
+        if i == 5 and semana_parcial:
+            # Última semana é parcial
+            inicio_sem_cy = inicio_semana_atual
+            fim_sem_cy = data_referencia
+        else:
+            # Semanas completas
+            fim_sem_cy = fim_semana - timedelta(weeks=semanas_atras)
+            inicio_sem_cy = fim_sem_cy - timedelta(days=6)
         
-        semanas_py = semanas_py_temp.tail(6)
-    else:
-        semanas_py = df_6sem_py.resample('W-SUN').agg({coluna_metrica: 'sum'}).tail(6)
+        # Usa exatamente as mesmas datas no ano anterior
+        try:
+            inicio_sem_py = inicio_sem_cy.replace(year=ano_anterior)
+            fim_sem_py = fim_sem_cy.replace(year=ano_anterior)
+        except ValueError:
+            # Caso especial para 29 de fevereiro
+            inicio_sem_py = pd.Timestamp(year=ano_anterior, month=inicio_sem_cy.month, 
+                                       day=min(inicio_sem_cy.day, 28))
+            fim_sem_py = pd.Timestamp(year=ano_anterior, month=fim_sem_cy.month,
+                                     day=min(fim_sem_cy.day, 28))
+        
+        # Filtra e soma os dados para essa semana
+        df_semana_py = df_work[(df_work.index >= inicio_sem_py) & (df_work.index <= fim_sem_py)]
+        valor_semana = df_semana_py[coluna_metrica].sum() if not df_semana_py.empty else 0
+        
+        # Adiciona à lista com o timestamp do último dia da semana
+        semanas_py_list.append(pd.Series({coluna_metrica: valor_semana}, name=fim_sem_py))
+    
+    # Cria o DataFrame das semanas PY
+    semanas_py = pd.DataFrame(semanas_py_list)
+    semanas_py.index = pd.DatetimeIndex([s.name for s in semanas_py_list])
 
     # Meses PY - Comparação "Maçã com Maçã"
     # Para cada mês, use apenas até o mesmo dia que CY
@@ -199,18 +225,20 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
     df_12m_py = pd.DataFrame(meses_py_list)
     df_12m_py.index = pd.date_range(start=pd.Timestamp(year=ano_anterior, month=1, day=1), periods=12, freq='MS')
 
-    # Para PY, calculamos mês parcial baseado no offset de 364 dias
-    mes_parcial_py = False
+    # Para PY, o mês parcial deve seguir a mesma lógica de CY para comparação justa
+    # Se CY tem mês parcial (não chegou ao fim do mês), PY também tem mês parcial para o mesmo mês
+    mes_parcial_py = mes_parcial_cy  # PY tem mês parcial se CY tem
     dias_mes_parcial_py = 0
     
-    # Usa a data PY com offset de 364 dias para consistência
-    if fim_semana_py is not None:
-        inicio_mes_py = fim_semana_py.replace(day=1)
-        fim_mes_py = (inicio_mes_py + pd.offsets.MonthEnd(1))
-        dados_mes_py = df_work[(df_work.index >= inicio_mes_py) & (df_work.index <= fim_semana_py)]
-        if not dados_mes_py.empty:
-            dias_mes_parcial_py = len(dados_mes_py.index.normalize().unique())
-            mes_parcial_py = fim_semana_py < fim_mes_py
+    # Calcula os dias no mês parcial PY (mesmo mês do ano anterior)
+    if mes_parcial_cy:
+        # Para o mês da data de referência no ano anterior
+        inicio_mes_ref_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=1)
+        # Limita ao mesmo dia que CY para comparação justa
+        fim_mes_ref_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=data_referencia.day)
+        dados_mes_ref_py = df_work[(df_work.index >= inicio_mes_ref_py) & (df_work.index <= fim_mes_ref_py)]
+        if not dados_mes_ref_py.empty:
+            dias_mes_parcial_py = len(dados_mes_ref_py.index.normalize().unique())
 
     return {
         'semanas_cy': semanas_cy,

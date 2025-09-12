@@ -228,23 +228,94 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
             yaxis='y'
         ))
 
-    fig.add_trace(go.Scatter(
-        x=x_meses,
-        y=valores_py_meses_clean,
-        name=f'{unidade.upper()} {ano_anterior} (Meses)',
-        line=dict(color="#D685AB", width=1.5),
-        mode='lines',
-        connectgaps=False,
-        hovertemplate='%{y:,.0f}<extra></extra>',
-        yaxis='y2'
-    ))
+    # Adiciona trace PY para meses, considerando se há mês parcial
+    if dados.get('mes_parcial_py', False) and any(not pd.isna(v) for v in valores_py_meses):
+        # Encontra o índice do último mês com dados PY (mês parcial)
+        ultimo_mes_com_dados_py = -1
+        for i in range(len(valores_py_meses_clean)):
+            if valores_py_meses_clean[i] is not None and not pd.isna(valores_py_meses_clean[i]):
+                ultimo_mes_com_dados_py = i
+        
+        if ultimo_mes_com_dados_py >= 0:
+            # Separa meses completos do parcial para PY
+            x_completo_py = x_meses[:ultimo_mes_com_dados_py]
+            y_completo_py = valores_py_meses_clean[:ultimo_mes_com_dados_py]
+            x_parcial_py = [x_meses[ultimo_mes_com_dados_py]]
+            y_parcial_py = [valores_py_meses_clean[ultimo_mes_com_dados_py]]
+            
+            # Trace para meses completos PY
+            if len(x_completo_py) > 0:
+                fig.add_trace(go.Scatter(
+                    x=x_completo_py,
+                    y=y_completo_py,
+                    name=f'{unidade.upper()} {ano_anterior} (Meses)',
+                    line=dict(color="#D685AB", width=1.5),
+                    mode='lines',
+                    connectgaps=False,
+                    hovertemplate='%{y:,.0f}<extra></extra>',
+                    yaxis='y2'
+                ))
+            
+            # Trace para o mês parcial PY (apenas o ponto)
+            if len(x_parcial_py) > 0:
+                fig.add_trace(go.Scatter(
+                    x=x_parcial_py,
+                    y=y_parcial_py,
+                    name=f'{unidade.upper()} {ano_anterior} (Meses)',
+                    mode='markers',
+                    marker=dict(color="#D685AB", size=6),
+                    connectgaps=False,
+                    hovertemplate='%{y:,.0f} (parcial)<extra></extra>',
+                    yaxis='y2',
+                    showlegend=False
+                ))
+                
+                # Linha tracejada conectando ao mês anterior
+                if len(x_completo_py) > 0:
+                    fig.add_trace(go.Scatter(
+                        x=[x_completo_py[-1], x_parcial_py[0]],
+                        y=[y_completo_py[-1], y_parcial_py[0]],
+                        line=dict(color="#D685AB", width=1.5, dash='dash'),
+                        mode='lines',
+                        connectgaps=False,
+                        hoverinfo='skip',
+                        yaxis='y2',
+                        showlegend=False
+                    ))
+        else:
+            # Sem dados - não adiciona trace
+            pass
+    else:
+        # Sem mês parcial PY - trace normal
+        fig.add_trace(go.Scatter(
+            x=x_meses,
+            y=valores_py_meses_clean,
+            name=f'{unidade.upper()} {ano_anterior} (Meses)',
+            line=dict(color="#D685AB", width=1.5),
+            mode='lines',
+            connectgaps=False,
+            hovertemplate='%{y:,.0f}<extra></extra>',
+            yaxis='y2'
+        ))
 
     if dados['mes_parcial_cy'] and any(not pd.isna(v) for v in valores_cy_meses):
+        # Encontra o índice do último mês com dados (mês parcial)
+        ultimo_mes_com_dados = -1
+        for i in range(len(valores_cy_meses_clean)):
+            if valores_cy_meses_clean[i] is not None and not pd.isna(valores_cy_meses_clean[i]):
+                ultimo_mes_com_dados = i
+        
         # Separa meses completos do parcial
-        x_completo = x_meses[:-1]
-        y_completo = valores_cy_meses_clean[:-1]
-        x_parcial = x_meses[-1:]  # Apenas o último mês
-        y_parcial = valores_cy_meses_clean[-1:]
+        if ultimo_mes_com_dados >= 0:
+            x_completo = x_meses[:ultimo_mes_com_dados]
+            y_completo = valores_cy_meses_clean[:ultimo_mes_com_dados]
+            x_parcial = [x_meses[ultimo_mes_com_dados]]  # Apenas o mês parcial
+            y_parcial = [valores_cy_meses_clean[ultimo_mes_com_dados]]
+        else:
+            x_completo = []
+            y_completo = []
+            x_parcial = []
+            y_parcial = []
         
         # Trace para meses completos (sem conectar ao mês parcial)
         if len(x_completo) > 0:
@@ -390,7 +461,7 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
         autosize=True,  # Permite redimensionamento automático
         showlegend=True,
         legend=dict(orientation="h", yanchor="top", y=-0.16, xanchor="center", x=0.5, bordercolor="lightgray", borderwidth=1, font=dict(size=11)),
-        margin=dict(t=60, b=150, l=50, r=50),  # Margens otimizadas
+        margin=dict(t=60, b=80, l=50, r=50),  # Margem inferior reduzida - KPIs removidos
         plot_bgcolor='white',
         paper_bgcolor='white'
     )
@@ -417,44 +488,51 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
     if ultima_semana_py and ultima_semana_py != 0:
         yoy_semanal = ((ultima_semana / ultima_semana_py - 1) * 100) if ultima_semana else 0
     
-    # Month calculations using the same processed data
-    mes_atual = sum(v for v in valores_cy_meses if v is not None and not pd.isna(v))
-    mes_py = sum(v for v in valores_py_meses if v is not None and not pd.isna(v))
+    # MTD - Month-to-Date (apenas o mês atual da data de referência)
+    mes_ref = data_ref.month
+    mtd_atual = valores_cy_meses_clean[mes_ref - 1] if mes_ref <= len(valores_cy_meses_clean) and valores_cy_meses_clean[mes_ref - 1] is not None else 0
+    mtd_py = valores_py_meses_clean[mes_ref - 1] if mes_ref <= len(valores_py_meses_clean) and valores_py_meses_clean[mes_ref - 1] is not None else 0
     
     yoy_mensal = 0
-    if mes_py and mes_py != 0:
-        yoy_mensal = ((mes_atual / mes_py - 1) * 100) if mes_atual else 0
+    if mtd_py and mtd_py != 0:
+        yoy_mensal = ((mtd_atual / mtd_py - 1) * 100) if mtd_atual else 0
     
-    # For now, use month values as proxies for quarter and year (simplified)
-    # In a full implementation, you'd calculate these from appropriate periods
-    trimestre_atual = mes_atual
-    yoy_trimestral = yoy_mensal
-    ano_atual = mes_atual
-    yoy_anual = yoy_mensal
+    # QTD - Quarter-to-Date (soma dos meses do trimestre atual)
+    trimestre = (mes_ref - 1) // 3 + 1  # 1, 2, 3 ou 4
+    inicio_trim = (trimestre - 1) * 3  # 0, 3, 6 ou 9
+    fim_trim = min(inicio_trim + 3, mes_ref)  # Não passar do mês atual
+    
+    qtd_atual = sum(valores_cy_meses_clean[i] for i in range(inicio_trim, fim_trim) 
+                    if i < len(valores_cy_meses_clean) and valores_cy_meses_clean[i] is not None)
+    qtd_py = sum(valores_py_meses_clean[i] for i in range(inicio_trim, fim_trim)
+                 if i < len(valores_py_meses_clean) and valores_py_meses_clean[i] is not None)
+    
+    yoy_trimestral = 0
+    if qtd_py and qtd_py != 0:
+        yoy_trimestral = ((qtd_atual / qtd_py - 1) * 100) if qtd_atual else 0
+    
+    # YTD - Year-to-Date (soma de todos os meses do ano até o mês atual)
+    ytd_atual = sum(v for v in valores_cy_meses_clean[:mes_ref] if v is not None and not pd.isna(v))
+    ytd_py = sum(v for v in valores_py_meses_clean[:mes_ref] if v is not None and not pd.isna(v))
+    
+    yoy_anual = 0
+    if ytd_py and ytd_py != 0:
+        yoy_anual = ((ytd_atual / ytd_py - 1) * 100) if ytd_atual else 0
     
     kpi_headers = ['LastWk', 'WOW', 'YOY(Semana)', 'MTD', 'YOY(Mês)', 'QTD', 'YOY(Trimestre)', 'YTD', 'YOY(Ano)']
     kpi_values = [
         formatar_valor(ultima_semana),
         formatar_valor(wow_pct, 'percentual'),
         formatar_valor(yoy_semanal, 'percentual'),
-        formatar_valor(mes_atual),
+        formatar_valor(mtd_atual),
         formatar_valor(yoy_mensal, 'percentual'),
-        formatar_valor(trimestre_atual),
+        formatar_valor(qtd_atual),
         formatar_valor(yoy_trimestral, 'percentual'),
-        formatar_valor(ano_atual),
+        formatar_valor(ytd_atual),
         formatar_valor(yoy_anual, 'percentual')
     ]
 
-    for i, (header, value) in enumerate(zip(kpi_headers, kpi_values)):
-        x_position = (i + 0.5) / 9
-        fig.add_annotation(x=x_position, y=-0.38, xref='paper', yref='paper', text=f"<b>{header}</b>", showarrow=False, font=dict(size=19, color='Black', family='Arial'), align='center', xanchor='center')
-        color = 'black'
-        if 'YOY' in header or 'WOW' in header:
-            try:
-                val_num = Decimal(str(value).replace('%', '').replace('+', ''))
-                color = 'darkgreen' if val_num > 0 else 'darkred' if val_num < 0 else 'black'
-            except Exception:
-                pass
-        fig.add_annotation(x=x_position, y=-0.44, xref='paper', yref='paper', text=value, showarrow=False, font=dict(size=18, color=color, family='Arial'), align='center', xanchor='center')
+    # KPIs removidos do gráfico conforme solicitado
+    # Os cálculos são mantidos mas as anotações visuais foram removidas
 
     return fig

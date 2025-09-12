@@ -546,14 +546,61 @@ class WBRCalculator:
             if ultima_semana_py != 0:
                 yoy_pct = ((ultima_semana / ultima_semana_py - 1) * 100)
             
-            # Calculate month-to-date (sum of current month weeks)
-            # This is simplified - in production you might want actual MTD
-            mes_atual = cy_series.sum()  # Sum of all 6 weeks as proxy for MTD
-            mes_py = py_series.sum()
+            # Calculate MTD, QTD, YTD from actual data
+            # Get the current date parts
+            current_month = self.week_ending.month
+            current_quarter = (current_month - 1) // 3 + 1
+            current_year = self.week_ending.year
             
+            # Calculate MTD - Month-to-Date (current month only)
+            start_of_month = pd.Timestamp(year=current_year, month=current_month, day=1)
+            mtd_mask_cy = (self.data.index >= start_of_month) & (self.data.index <= self.week_ending)
+            mtd_atual = self.data[mtd_mask_cy][metric_col].sum() if metric_col in self.data.columns else cy_series.sum()
+            
+            # Calculate MTD for previous year
+            start_of_month_py = pd.Timestamp(year=current_year - 1, month=current_month, day=1)
+            end_of_month_py = pd.Timestamp(year=current_year - 1, month=current_month, day=self.week_ending.day)
+            mtd_mask_py = (self.data.index >= start_of_month_py) & (self.data.index <= end_of_month_py)
+            mtd_py = self.data[mtd_mask_py][metric_col].sum() if metric_col in self.data.columns else py_series.sum()
+            
+            # Calculate QTD - Quarter-to-Date
+            quarter_start_month = (current_quarter - 1) * 3 + 1
+            start_of_quarter = pd.Timestamp(year=current_year, month=quarter_start_month, day=1)
+            qtd_mask_cy = (self.data.index >= start_of_quarter) & (self.data.index <= self.week_ending)
+            qtd_atual = self.data[qtd_mask_cy][metric_col].sum() if metric_col in self.data.columns else mtd_atual
+            
+            # Calculate QTD for previous year
+            start_of_quarter_py = pd.Timestamp(year=current_year - 1, month=quarter_start_month, day=1)
+            end_date_py = pd.Timestamp(year=current_year - 1, month=current_month, day=self.week_ending.day)
+            qtd_mask_py = (self.data.index >= start_of_quarter_py) & (self.data.index <= end_date_py)
+            qtd_py = self.data[qtd_mask_py][metric_col].sum() if metric_col in self.data.columns else mtd_py
+            
+            # Calculate YTD - Year-to-Date
+            start_of_year = pd.Timestamp(year=current_year, month=1, day=1)
+            ytd_mask_cy = (self.data.index >= start_of_year) & (self.data.index <= self.week_ending)
+            ytd_atual = self.data[ytd_mask_cy][metric_col].sum() if metric_col in self.data.columns else qtd_atual
+            
+            # Calculate YTD for previous year
+            start_of_year_py = pd.Timestamp(year=current_year - 1, month=1, day=1)
+            ytd_mask_py = (self.data.index >= start_of_year_py) & (self.data.index <= end_date_py)
+            ytd_py = self.data[ytd_mask_py][metric_col].sum() if metric_col in self.data.columns else qtd_py
+            
+            # Calculate YOY percentages
             mtd_pct = 0
-            if mes_py != 0:
-                mtd_pct = ((mes_atual / mes_py - 1) * 100)
+            if mtd_py != 0:
+                mtd_pct = ((mtd_atual / mtd_py - 1) * 100)
+            
+            qtd_pct = 0
+            if qtd_py != 0:
+                qtd_pct = ((qtd_atual / qtd_py - 1) * 100)
+                
+            ytd_pct = 0
+            if ytd_py != 0:
+                ytd_pct = ((ytd_atual / ytd_py - 1) * 100)
+            
+            # For backward compatibility, mes_atual uses MTD
+            mes_atual = mtd_atual
+            mes_py = mtd_py
             
             return {
                 'ultima_semana': Decimal(str(ultima_semana)),
@@ -561,13 +608,13 @@ class WBRCalculator:
                 'yoy_semanal': Decimal(str(yoy_pct)),
                 'mes_atual': Decimal(str(mes_atual)),
                 'yoy_mensal': Decimal(str(mtd_pct)),
-                'trimestre_atual': Decimal(str(mes_atual)),  # Simplified
-                'yoy_trimestral': Decimal(str(mtd_pct)),     # Simplified
-                'ano_atual': Decimal(str(mes_atual)),         # Simplified
-                'yoy_anual': Decimal(str(mtd_pct)),          # Simplified
+                'trimestre_atual': Decimal(str(qtd_atual)),
+                'yoy_trimestral': Decimal(str(qtd_pct)),
+                'ano_atual': Decimal(str(ytd_atual)),
+                'yoy_anual': Decimal(str(ytd_pct)),
                 'wow_pct': Decimal(str(wow_pct)),
                 'wow_abs': Decimal(str(wow_abs)),
-                'mtd_atual': Decimal(str(mes_atual)),
+                'mtd_atual': Decimal(str(mtd_atual)),
                 'mtd_pct': Decimal(str(mtd_pct))
             }
             
