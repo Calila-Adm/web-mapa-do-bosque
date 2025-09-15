@@ -19,6 +19,7 @@ DB_CONFIG = {
         "tables": {
             "pessoas": os.getenv("POSTGRES_TABLE_PESSOAS", "fluxo_de_pessoas"),
             "veiculos": os.getenv("POSTGRES_TABLE_VEICULOS", "fluxo_de_veiculos"),
+            "vendas": os.getenv("POSTGRES_TABLE_VENDAS", "vendas_gshop"),
         }
     },
     "bigquery": {
@@ -42,5 +43,6 @@ CHART_CONFIG = {
     "colors": {
         "pessoas": "#1E90FF",
         "veiculos": "#FF6B6B",
+        "vendas": "#28A745",
     }
 }

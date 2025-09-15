@@ -86,7 +86,7 @@ def get_available_date_range():
         
         # For BigQuery, we can optimize with a specific query
         if db_type == "bigquery":
-            for table_name in ['pessoas', 'veiculos']:
+            for table_name in ['pessoas', 'veiculos', 'vendas']:
                 config = TABLES_CONFIG[table_name]
                 query = f"""
                 SELECT 
@@ -103,7 +103,7 @@ def get_available_date_range():
                     pass
         else:
             # For PostgreSQL or other databases, load minimal data
-            for table_name in ['pessoas', 'veiculos']:
+            for table_name in ['pessoas', 'veiculos', 'vendas']:
                 config = TABLES_CONFIG[table_name]
                 try:
                     # Try to get just the date column
@@ -395,10 +395,11 @@ def render_chart(config: dict, df: pd.DataFrame):
     except Exception as e:
         st.error(f"Erro ao gerar gráfico: {str(e)}")
 
-# Load data for both tables
+# Load data for all tables
 with st.spinner("Carregando dados..."):
     df_pessoas = load_table_data(TABLES_CONFIG['pessoas'])
     df_veiculos = load_table_data(TABLES_CONFIG['veiculos'])
+    df_vendas = load_table_data(TABLES_CONFIG['vendas'])
     
     # Apply filters
     df_pessoas_filtered = apply_filters(
@@ -416,6 +417,14 @@ with st.spinner("Carregando dados..."):
         year_filter=None,
         shopping_filter=filtro_shopping
     ) if df_veiculos is not None else None
+    
+    df_vendas_filtered = apply_filters(
+        df_vendas,
+        date_start=data_inicio_ts,
+        date_end=data_fim_ts,
+        year_filter=None,
+        shopping_filter=filtro_shopping
+    ) if df_vendas is not None else None
 
 # Render based on selected layout
 if layout_opcao == "Um abaixo do outro":
@@ -433,12 +442,21 @@ if layout_opcao == "Um abaixo do outro":
         render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
     else:
         st.warning("Nenhum dado de veículos encontrado")
+    
+    st.markdown("---")
+    
+    st.subheader(f"{TABLES_CONFIG['vendas']['icon']} {TABLES_CONFIG['vendas']['titulo']}")
+    if df_vendas_filtered is not None and not df_vendas_filtered.empty:
+        render_chart(TABLES_CONFIG['vendas'], df_vendas_filtered)
+    else:
+        st.warning("Nenhum dado de vendas encontrado")
 
 else:  # Abas
     # Tabs layout
-    tab_pessoas, tab_veiculos = st.tabs([
+    tab_pessoas, tab_veiculos, tab_vendas = st.tabs([
         f"{TABLES_CONFIG['pessoas']['icon']} {TABLES_CONFIG['pessoas']['titulo']}",
-        f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}"
+        f"{TABLES_CONFIG['veiculos']['icon']} {TABLES_CONFIG['veiculos']['titulo']}",
+        f"{TABLES_CONFIG['vendas']['icon']} {TABLES_CONFIG['vendas']['titulo']}"
     ])
     
     with tab_pessoas:
@@ -452,6 +470,12 @@ else:  # Abas
             render_chart(TABLES_CONFIG['veiculos'], df_veiculos_filtered)
         else:
             st.warning("Nenhum dado de veículos encontrado")
+    
+    with tab_vendas:
+        if df_vendas_filtered is not None and not df_vendas_filtered.empty:
+            render_chart(TABLES_CONFIG['vendas'], df_vendas_filtered)
+        else:
+            st.warning("Nenhum dado de vendas encontrado")
 
 # Advanced WBR Metrics Section
 st.markdown("---")

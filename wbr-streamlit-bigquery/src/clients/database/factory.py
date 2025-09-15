@@ -78,6 +78,16 @@ def get_table_config(db_type: Optional[str] = None):
                 'unidade': 'veículos',
                 'icon': '🚗',
                 'color': '#FF6B6B'
+            },
+            'vendas': {
+                'schema': schema,
+                'table': os.getenv("POSTGRES_TABLE_VENDAS", "vendas_gshop"),  # Nome correto com underscore
+                'date_col': 'data',  # Ajuste conforme sua tabela real
+                'metric_col': 'value',  # Ajuste conforme sua tabela real
+                'titulo': 'Vendas',
+                'unidade': 'R$',
+                'icon': '💰',
+                'color': '#28A745'
             }
         }
     else:
@@ -100,6 +110,15 @@ def get_table_config(db_type: Optional[str] = None):
                 'unidade': 'veículos',
                 'icon': '🚗',
                 'color': '#FF6B6B'
+            },
+            'vendas': {
+                'table': 'brief_vendas_shop',
+                'date_col': 'data_venda',
+                'metric_col': 'valor_total',
+                'titulo': 'Vendas',
+                'unidade': 'R$',
+                'icon': '💰',
+                'color': '#28A745'
             }
         }
 

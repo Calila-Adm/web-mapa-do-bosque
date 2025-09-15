@@ -67,13 +67,14 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
     meses_offset = semanas_count + 1
     x_meses = list(range(meses_offset, meses_offset + 12))
 
+    # Cálculo de YOY para semanas e meses
     def _yoy(cy, py):
         cyf = _to_decimal(cy)
         pyf = _to_decimal(py)
         if pyf is None or pyf == 0 or cyf is None:
             return None
         return ((cyf - pyf) / pyf) * 100
-
+    
     yoy_semanas = [_yoy(cy, py) for cy, py in zip(valores_cy_semanas, valores_py_semanas)]
     yoy_meses = [_yoy(cy, py) for cy, py in zip(valores_cy_meses, valores_py_meses)]
 

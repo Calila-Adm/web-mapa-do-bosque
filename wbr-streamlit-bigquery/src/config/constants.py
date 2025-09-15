@@ -8,6 +8,7 @@ class MetricType(Enum):
     """Tipos de métricas disponíveis."""
     PESSOAS = "pessoas"
     VEICULOS = "veiculos"
+    VENDAS = "vendas"
 
 class TimeGranularity(Enum):
     """Granularidade temporal para agregações."""
@@ -38,5 +39,11 @@ TABLES_CONFIG = {
         'unidade': 'veículos',
         'icon': '🚗',
         'color': '#FF6B6B'
+    },
+    MetricType.VENDAS: {
+        'titulo': 'Vendas',
+        'unidade': 'R$',
+        'icon': '💰',
+        'color': '#28A745'
     }
 }
