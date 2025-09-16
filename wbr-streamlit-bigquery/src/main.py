@@ -16,7 +16,7 @@ import pandas as pd
 from datetime import datetime
 from src.utils.env import load_environment_variables
 # from src.clients.database.bigquery import BigQueryClient  # Comentado - usando factory agora
-from src.clients.database.factory import get_database_client, get_table_config, fetch_data_generic
+from src.clients.database.factory import get_database_client, get_table_config, fetch_data_generic, get_multiple_clients, get_supabase_table_config
 from src.core.wbr import gerar_grafico_wbr, calcular_metricas_wbr
 from src.core.wbr_metrics import calcular_kpis  # Now using unified wbr_metrics
 
@@ -35,14 +35,20 @@ if db_type == "bigquery":
         abs_path = os.path.join(PROJECT_ROOT, cred_path)
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = abs_path
 
-# Initialize the database client using factory
-db_client = get_database_client()
+# Initialize database clients
+db_client = get_database_client()  # Primary client
+db_clients = get_multiple_clients()  # All available clients
 
 # Page configuration
 st.set_page_config(page_title="WBR Dashboard", layout="wide", page_icon="📊")
 
-# Get table configurations based on database type
-TABLES_CONFIG = get_table_config(db_type)
+# Get table configurations
+TABLES_CONFIG = get_table_config(db_type)  # Primary database tables
+
+# Get Supabase table configurations if available
+SUPABASE_CONFIG = {}
+if 'supabase' in db_clients:
+    SUPABASE_CONFIG = get_supabase_table_config()
 
 # Check database configuration
 if db_type == "bigquery":
@@ -141,8 +147,94 @@ def get_available_date_range():
 st.title("📊 Dashboard WBR - Análise de Fluxo")
 st.markdown("---")
 
+# Cache function for getting available shoppings
+@st.cache_data(ttl=3600, show_spinner=False)  # Cache for 1 hour
+def get_available_shoppings():
+    """Get unique shopping values from all tables"""
+    # First, check if we should use mock data for demonstration
+    use_mock_data = os.getenv("USE_MOCK_SHOPPING_DATA", "false").lower() == "true"
+
+    if use_mock_data:
+        # Return the actual shopping list used in the system
+        return [
+            "SCIB",
+            "SBGP",
+            "SBI"
+        ]
+
+    # Try to get real data from database
+    try:
+        all_shoppings = set()
+        shopping_col = os.getenv("WBR_SHOPPING_COL", "shopping")
+
+        # Try a simpler approach - just check if any data has shopping column
+        test_query = None
+
+        if db_type == "bigquery":
+            # For BigQuery - check first table only to see if column exists
+            config = TABLES_CONFIG.get('pessoas', {})
+            if config.get('table'):
+                test_query = f"""
+                SELECT DISTINCT {shopping_col} as shopping
+                FROM `{config['table']}`
+                WHERE {shopping_col} IS NOT NULL
+                LIMIT 50
+                """
+                try:
+                    result = db_client.query(test_query).to_dataframe()
+                    if not result.empty and 'shopping' in result.columns:
+                        all_shoppings.update(result['shopping'].dropna().tolist())
+                except:
+                    pass  # Column doesn't exist
+        else:
+            # For PostgreSQL - simpler check
+            for table_name in ['pessoas', 'veiculos', 'vendas']:
+                config = TABLES_CONFIG.get(table_name, {})
+                schema = config.get('schema', 'mapa_do_bosque')
+                table = config.get('table', table_name)
+
+                # Try simple query without TRIM
+                test_query = f"""
+                SELECT DISTINCT {shopping_col} as shopping
+                FROM {schema}.{table}
+                WHERE {shopping_col} IS NOT NULL
+                LIMIT 50
+                """
+                try:
+                    result = pd.read_sql(test_query, db_client.connection)
+                    if not result.empty and 'shopping' in result.columns:
+                        all_shoppings.update(result['shopping'].dropna().tolist())
+                except:
+                    continue  # Try next table
+
+        # Convert to sorted list
+        shopping_list = sorted(list(all_shoppings))
+
+        # If no data found, return the actual shopping list
+        if not shopping_list:
+            # Return the real shopping centers from the system
+            return [
+                "SCIB",
+                "SBGP",
+                "SBI"
+            ]
+
+        return shopping_list
+
+    except Exception as e:
+        # If all fails, return the real shopping list so the dropdown still works
+        print(f"DEBUG: Using default shopping list due to: {str(e)}")
+        return [
+            "SCIB",
+            "SBGP",
+            "SBI"
+        ]
+
 # Get available date range before showing the sidebar
 min_date_available, max_date_available = get_available_date_range()
+
+# Get available shoppings
+available_shoppings = get_available_shoppings()
 
 # Sidebar with filters only (no BigQuery configuration)
 with st.sidebar:
@@ -215,11 +307,29 @@ with st.sidebar:
     
     # Shopping filter (optional - will be populated if column exists)
     shopping_col = os.getenv("WBR_SHOPPING_COL", "shopping")
-    filtro_shopping = st.text_input(
-        "🏢 Shopping (opcional)",
-        placeholder="Digite o nome do shopping",
-        help="Deixe vazio para ver todos"
-    )
+
+    # Always show dropdown since we guarantee to have shopping options
+    if available_shoppings:
+        # Add "Todos" option at the beginning
+        shopping_options = ["Todos"] + available_shoppings
+
+        filtro_shopping = st.selectbox(
+            "🏪 Shopping",
+            options=shopping_options,
+            index=0,  # Default to "Todos"
+            help="Selecione o shopping para filtrar os dados"
+        )
+
+        # Convert "Todos" to None for the filter
+        if filtro_shopping == "Todos":
+            filtro_shopping = None
+    else:
+        # This should not happen anymore, but keep as fallback
+        filtro_shopping = st.text_input(
+            "🏪 Shopping (opcional)",
+            placeholder="Digite o nome do shopping",
+            help="Deixe vazio para ver todos"
+        )
     
     st.markdown("---")
     st.header("📐 Layout")
@@ -279,7 +389,8 @@ def apply_filters(df: pd.DataFrame, date_start=None, date_end=None, year_filter=
     
     # Apply shopping filter
     if shopping_filter and 'shopping' in df.columns:
-        df = df[df['shopping'].str.contains(shopping_filter, case=False, na=False)]
+        # Use exact match for dropdown selection
+        df = df[df['shopping'] == shopping_filter]
     
     return df
 
@@ -426,6 +537,10 @@ with st.spinner("Carregando dados..."):
         shopping_filter=filtro_shopping
     ) if df_vendas is not None else None
 
+# Show active filters as info
+if filtro_shopping:
+    st.info(f"🏪 **Filtro ativo:** Shopping {filtro_shopping}")
+
 # Render based on selected layout
 if layout_opcao == "Um abaixo do outro":
     # Vertical layout
@@ -476,6 +591,288 @@ else:  # Abas
             render_chart(TABLES_CONFIG['vendas'], df_vendas_filtered)
         else:
             st.warning("Nenhum dado de vendas encontrado")
+
+# Instagram Metrics Section from Supabase PostgreSQL
+# Verifica se temos a connection string do Supabase configurada
+if os.getenv("SUPABASE_DATABASE_URL"):
+    st.markdown("---")
+    st.header("📱 Métricas do Instagram")
+
+    # Import Supabase PostgreSQL client and plotly
+    from src.clients.database.supabase_postgres import SupabaseClient
+    import plotly.graph_objects as go
+    import plotly.express as px
+
+    # Initialize Supabase PostgreSQL client
+    try:
+        supabase_client = SupabaseClient()
+        supabase_connected = supabase_client.test_connection()
+    except Exception as e:
+        st.error(f"Erro ao conectar com Supabase: {str(e)}")
+        supabase_connected = False
+
+    if supabase_connected:
+        # Get date range for queries
+        date_start_str = data_inicio_ts.strftime('%Y-%m-%d')
+        date_end_str = data_fim_ts.strftime('%Y-%m-%d')
+
+        # Get shopping filter from sidebar (if exists)
+        shopping_filter_instagram = filtro_shopping if filtro_shopping != "Todos" else None
+
+        # Load engagement data with caching
+        @st.cache_data(ttl=300, show_spinner=False)
+        def load_instagram_engagement_data(date_start, date_end, shopping_filter=None):
+            """Carrega dados de engajamento do Instagram"""
+            try:
+                df = supabase_client.get_engagement_data(
+                    date_start=date_start,
+                    date_end=date_end,
+                    shopping_filter=shopping_filter
+                )
+                if not df.empty:
+                    df['data'] = pd.to_datetime(df['data'])
+                return df
+            except Exception as e:
+                st.error(f"Erro ao carregar dados de engajamento: {str(e)}")
+                return pd.DataFrame()
+
+
+    # Load data
+    with st.spinner('Carregando dados do Instagram...'):
+        # Load engagement data (contains likes, comments, shares, saves)
+        df_engagement = load_instagram_engagement_data(date_start_str, date_end_str, shopping_filter_instagram)
+
+        # Load post count data
+        @st.cache_data(ttl=300, show_spinner=False)
+        def load_instagram_post_count_data(date_start, date_end, shopping_filter=None):
+            """Carrega contagem de posts do Instagram"""
+            try:
+                df = supabase_client.get_post_count_data(
+                    date_start=date_start,
+                    date_end=date_end,
+                    shopping_filter=shopping_filter
+                )
+                if not df.empty:
+                    df['data'] = pd.to_datetime(df['data'])
+                    # Renomeia colunas para compatibilidade
+                    df.columns = ['shopping', 'data', 'total_posts']
+                return df
+            except Exception as e:
+                st.error(f"Erro ao carregar contagem de posts: {str(e)}")
+                return pd.DataFrame()
+
+        # Carrega dados dentro do bloco if supabase_connected
+        if supabase_connected:
+            with st.spinner('Carregando dados do Instagram...'):
+                df_engagement = load_instagram_engagement_data(date_start_str, date_end_str, shopping_filter_instagram)
+                df_post_count = load_instagram_post_count_data(date_start_str, date_end_str, shopping_filter_instagram)
+
+    # Define colors for each shopping
+    shopping_colors = {
+        'SCIB': '#1f77b4',  # Blue
+        'SBGP': '#2ca02c',  # Green
+        'SBI': '#d62728'    # Red
+    }
+
+    # Create tabs for different metrics
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "📊 Engajamento Total",
+        "❤️ Likes",
+        "💬 Comentários",
+        "🔄 Compartilhamentos",
+        "💾 Salvamentos",
+        "📝 Posts Publicados"
+    ])
+
+    # Function to create time series chart
+    def create_instagram_chart(df, metric_col, title, y_label):
+        """Cria gráfico de linha temporal para métrica do Instagram"""
+        if df.empty:
+            st.warning(f"Sem dados disponíveis para {title}")
+            return None
+
+        fig = go.Figure()
+
+        # If shopping filter is active, show single line
+        if shopping_filter_instagram:
+            fig.add_trace(go.Scatter(
+                x=df['data'],
+                y=df[metric_col],
+                mode='lines+markers',
+                name=shopping_filter_instagram,
+                line=dict(color=shopping_colors.get(shopping_filter_instagram, '#1f77b4'), width=2),
+                marker=dict(size=6)
+            ))
+        else:
+            # Show lines for each shopping
+            for shopping in df['shopping'].unique():
+                df_shop = df[df['shopping'] == shopping]
+                fig.add_trace(go.Scatter(
+                    x=df_shop['data'],
+                    y=df_shop[metric_col],
+                    mode='lines+markers',
+                    name=shopping,
+                    line=dict(color=shopping_colors.get(shopping, '#666'), width=2),
+                    marker=dict(size=6)
+                ))
+
+        fig.update_layout(
+            title=title,
+            xaxis_title="Data",
+            yaxis_title=y_label,
+            hovermode='x unified',
+            showlegend=True if not shopping_filter_instagram else False,
+            height=400
+        )
+
+        return fig
+
+    # Tab 1: Engajamento Total
+    with tab1:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'engajamento_total',
+                'Engajamento Total por Dia',
+                'Total de Interações'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Show summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total", f"{df_engagement['engajamento_total'].sum():,.0f}")
+                with col2:
+                    st.metric("Média Diária", f"{df_engagement['engajamento_total'].mean():,.0f}")
+                with col3:
+                    st.metric("Máximo", f"{df_engagement['engajamento_total'].max():,.0f}")
+                with col4:
+                    st.metric("Posts", f"{df_engagement['total_posts'].sum():,.0f}")
+        else:
+            st.info("Sem dados de engajamento disponíveis")
+
+    # Tab 2: Likes
+    with tab2:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_likes',
+                'Total de Likes por Dia',
+                'Quantidade de Likes'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Likes", f"{df_engagement['total_likes'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_likes'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_likes'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de likes disponíveis")
+
+    # Tab 3: Comentários
+    with tab3:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_comentarios',
+                'Total de Comentários por Dia',
+                'Quantidade de Comentários'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Comentários", f"{df_engagement['total_comentarios'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_comentarios'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_comentarios'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de comentários disponíveis")
+
+    # Tab 4: Compartilhamentos
+    with tab4:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_compartilhamentos',
+                'Total de Compartilhamentos por Dia',
+                'Quantidade de Compartilhamentos'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total", f"{df_engagement['total_compartilhamentos'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_compartilhamentos'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_compartilhamentos'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de compartilhamentos disponíveis")
+
+    # Tab 5: Salvamentos
+    with tab5:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_salvos',
+                'Total de Salvamentos por Dia',
+                'Quantidade de Salvamentos'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Salvamentos", f"{df_engagement['total_salvos'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_salvos'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_salvos'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de salvamentos disponíveis")
+
+    # Tab 6: Posts Publicados
+    with tab6:
+        if not df_post_count.empty:
+            # Prepare data for chart
+            df_post_chart = df_post_count.copy()
+            df_post_chart.columns = ['shopping', 'data', 'total_posts']
+
+            fig = create_instagram_chart(
+                df_post_chart,
+                'total_posts',
+                'Quantidade de Posts Publicados',
+                'Número de Posts'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Posts", f"{df_post_chart['total_posts'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_post_chart['total_posts'].mean():,.1f}")
+                with col3:
+                    days = (df_post_chart['data'].max() - df_post_chart['data'].min()).days + 1
+                    st.metric("Período (dias)", f"{days}")
 
 # Advanced WBR Metrics Section
 st.markdown("---")

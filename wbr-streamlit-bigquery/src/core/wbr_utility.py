@@ -9,7 +9,7 @@ import numpy as np
 import datetime
 import logging
 from decimal import Decimal
-from typing import Dict, Optional, Union, Any, Tuple
+from typing import Dict, Optional, Union, Any, Tuple, List
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -312,6 +312,463 @@ def prepare_data_for_wbr(
     return df_prepared
 
 
+# ============================================
+# WBR METRICS UTILITIES (WOW, Last vs Prev)
+# ============================================
+
+def compute_wow_comparison(
+    weekly_df: pd.DataFrame,
+    metric_column: str,
+    date_column: str = 'week_ending'
+) -> Dict[str, Any]:
+    """
+    Compute Week-over-Week (WOW) comparison from weekly aggregated data.
+
+    Args:
+        weekly_df: DataFrame with weekly data (must be sorted by date)
+        metric_column: Name of the metric column to compare
+        date_column: Name of the date column (default: 'week_ending')
+
+    Returns:
+        Dictionary with WOW comparison results
+    """
+    if len(weekly_df) < 2:
+        return {
+            'current': None,
+            'previous': None,
+            'absolute_change': None,
+            'percent_change': None,
+            'comparison_type': 'wow'
+        }
+
+    # Get last two weeks (most recent first after sorting)
+    weekly_sorted = weekly_df.sort_values(date_column, ascending=False)
+
+    current_week = weekly_sorted.iloc[0]
+    previous_week = weekly_sorted.iloc[1]
+
+    current_value = current_week[metric_column]
+    previous_value = previous_week[metric_column]
+
+    # Handle NaN values
+    if pd.isna(current_value) or pd.isna(previous_value):
+        return {
+            'current': current_value,
+            'previous': previous_value,
+            'absolute_change': None,
+            'percent_change': None,
+            'comparison_type': 'wow'
+        }
+
+    absolute_change = current_value - previous_value
+    percent_change = None
+
+    if previous_value != 0:
+        percent_change = (absolute_change / previous_value) * 100
+
+    return {
+        'current': current_value,
+        'previous': previous_value,
+        'absolute_change': absolute_change,
+        'percent_change': percent_change,
+        'comparison_type': 'wow',
+        'current_date': current_week[date_column],
+        'previous_date': previous_week[date_column]
+    }
+
+
+def compute_last_vs_prev_weeks(
+    weekly_df: pd.DataFrame,
+    metric_columns: Union[str, List[str]],
+    date_column: str = 'week_ending',
+    num_periods: int = 2
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Compare last N periods for multiple metrics.
+
+    Args:
+        weekly_df: DataFrame with weekly data
+        metric_columns: Single column name or list of column names
+        date_column: Name of the date column
+        num_periods: Number of periods to compare (default: 2)
+
+    Returns:
+        Dictionary with comparison results for each metric
+    """
+    if isinstance(metric_columns, str):
+        metric_columns = [metric_columns]
+
+    if len(weekly_df) < num_periods:
+        logger.warning(f"Insufficient data: need {num_periods} periods, got {len(weekly_df)}")
+        return {}
+
+    # Sort by date descending (most recent first)
+    weekly_sorted = weekly_df.sort_values(date_column, ascending=False)
+
+    results = {}
+
+    for metric in metric_columns:
+        if metric not in weekly_df.columns:
+            logger.warning(f"Metric column '{metric}' not found in DataFrame")
+            continue
+
+        metric_results = {
+            'periods': [],
+            'comparisons': []
+        }
+
+        # Extract last N periods
+        for i in range(num_periods):
+            if i < len(weekly_sorted):
+                period_data = weekly_sorted.iloc[i]
+                metric_results['periods'].append({
+                    'period_index': i,
+                    'date': period_data[date_column],
+                    'value': period_data[metric]
+                })
+
+        # Calculate period-to-period comparisons
+        for i in range(len(metric_results['periods']) - 1):
+            current = metric_results['periods'][i]
+            previous = metric_results['periods'][i + 1]
+
+            current_val = current['value']
+            previous_val = previous['value']
+
+            if pd.isna(current_val) or pd.isna(previous_val):
+                comparison = {
+                    'from_period': i + 1,
+                    'to_period': i,
+                    'absolute_change': None,
+                    'percent_change': None
+                }
+            else:
+                absolute_change = current_val - previous_val
+                percent_change = None
+                if previous_val != 0:
+                    percent_change = (absolute_change / previous_val) * 100
+
+                comparison = {
+                    'from_period': i + 1,
+                    'to_period': i,
+                    'absolute_change': absolute_change,
+                    'percent_change': percent_change
+                }
+
+            metric_results['comparisons'].append(comparison)
+
+        results[metric] = metric_results
+
+    return results
+
+
+def calculate_trailing_aggregates(
+    weekly_df: pd.DataFrame,
+    metric_columns: Union[str, List[str]],
+    aggregate_func: str = 'sum',
+    periods: Optional[List[int]] = None
+) -> Dict[str, Dict[int, Any]]:
+    """
+    Calculate trailing aggregates (e.g., last 2 weeks, last 3 weeks, etc.)
+
+    Args:
+        weekly_df: DataFrame with weekly data (sorted by date)
+        metric_columns: Columns to aggregate
+        aggregate_func: Aggregation function ('sum', 'mean', 'median', etc.)
+        periods: List of trailing periods to calculate (default: [2, 3, 4, 6])
+
+    Returns:
+        Dictionary with trailing aggregates for each metric and period
+    """
+    if isinstance(metric_columns, str):
+        metric_columns = [metric_columns]
+
+    if periods is None:
+        periods = [2, 3, 4, 6]
+
+    # Sort by date ascending for trailing calculations
+    weekly_sorted = weekly_df.sort_values('week_ending', ascending=True)
+
+    results = {}
+
+    for metric in metric_columns:
+        if metric not in weekly_df.columns:
+            continue
+
+        metric_results = {}
+
+        for period in periods:
+            if len(weekly_sorted) >= period:
+                # Get last N periods
+                last_n_periods = weekly_sorted.tail(period)
+
+                try:
+                    if aggregate_func == 'sum':
+                        aggregate_value = last_n_periods[metric].sum()
+                    elif aggregate_func == 'mean':
+                        aggregate_value = last_n_periods[metric].mean()
+                    elif aggregate_func == 'median':
+                        aggregate_value = last_n_periods[metric].median()
+                    elif aggregate_func == 'min':
+                        aggregate_value = last_n_periods[metric].min()
+                    elif aggregate_func == 'max':
+                        aggregate_value = last_n_periods[metric].max()
+                    else:
+                        aggregate_value = last_n_periods[metric].agg(aggregate_func)
+
+                    metric_results[period] = {
+                        'value': aggregate_value,
+                        'periods_included': len(last_n_periods),
+                        'date_range': {
+                            'start': last_n_periods.iloc[0]['week_ending'],
+                            'end': last_n_periods.iloc[-1]['week_ending']
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"Aggregation failed for {metric} over {period} periods: {e}")
+                    metric_results[period] = {
+                        'value': None,
+                        'periods_included': 0,
+                        'error': str(e)
+                    }
+            else:
+                metric_results[period] = {
+                    'value': None,
+                    'periods_included': len(weekly_sorted),
+                    'note': f'Insufficient data: need {period} periods, have {len(weekly_sorted)}'
+                }
+
+        results[metric] = metric_results
+
+    return results
+
+
+def detect_trend_direction(
+    weekly_df: pd.DataFrame,
+    metric_column: str,
+    min_periods: int = 3,
+    date_column: str = 'week_ending'
+) -> Dict[str, Any]:
+    """
+    Detect trend direction for a metric over time.
+
+    Args:
+        weekly_df: DataFrame with weekly data
+        metric_column: Column to analyze for trends
+        min_periods: Minimum periods needed for trend detection
+        date_column: Name of the date column
+
+    Returns:
+        Dictionary with trend analysis results
+    """
+    if len(weekly_df) < min_periods:
+        return {
+            'trend': 'insufficient_data',
+            'periods_analyzed': len(weekly_df),
+            'min_periods_required': min_periods
+        }
+
+    # Sort by date
+    weekly_sorted = weekly_df.sort_values(date_column)
+
+    # Remove NaN values
+    clean_data = weekly_sorted.dropna(subset=[metric_column])
+
+    if len(clean_data) < min_periods:
+        return {
+            'trend': 'insufficient_clean_data',
+            'periods_analyzed': len(clean_data),
+            'periods_total': len(weekly_df)
+        }
+
+    values = clean_data[metric_column].values
+
+    # Simple trend detection using differences
+    differences = np.diff(values)
+
+    positive_changes = np.sum(differences > 0)
+    negative_changes = np.sum(differences < 0)
+    no_changes = np.sum(differences == 0)
+
+    total_changes = len(differences)
+
+    # Determine trend
+    if positive_changes > negative_changes * 1.5:  # Strong upward trend
+        trend = 'upward'
+    elif negative_changes > positive_changes * 1.5:  # Strong downward trend
+        trend = 'downward'
+    elif abs(positive_changes - negative_changes) <= 1:  # Roughly equal
+        trend = 'stable'
+    else:
+        trend = 'mixed'
+
+    return {
+        'trend': trend,
+        'periods_analyzed': len(clean_data),
+        'positive_changes': positive_changes,
+        'negative_changes': negative_changes,
+        'no_changes': no_changes,
+        'total_changes': total_changes,
+        'latest_value': values[-1],
+        'first_value': values[0],
+        'overall_change': values[-1] - values[0],
+        'overall_change_percent': ((values[-1] - values[0]) / values[0] * 100) if values[0] != 0 else None
+    }
+
+
+# ============================================
+# SPECIFICATION-REQUIRED METRICS FUNCTIONS
+# ============================================
+
+def compute_last_prev(df_sem: pd.DataFrame) -> Dict[str, Tuple[Optional[float], Optional[float]]]:
+    """
+    Compute last and previous week values for each metric.
+
+    Args:
+        df_sem: Weekly DataFrame (sorted by date)
+
+    Returns:
+        Dictionary mapping metric names to (prev, last) tuples
+    """
+    if len(df_sem) < 2:
+        # Not enough data for comparison
+        return {}
+
+    # Identify metric columns (exclude metadata columns)
+    metadata_cols = ['WeekIndex', 'StartDate', 'EndDate', 'Date', 'Intervalo',
+                     'WeekEndingWeekday', 'WkLabel', 'WkLabelFull', 'week_ending',
+                     'week_start', 'days_in_week', 'week_number', 'year', 'relative_week']
+
+    metric_cols = [col for col in df_sem.columns if col not in metadata_cols]
+
+    # Get last two rows (assuming sorted chronologically)
+    last_row = df_sem.iloc[-1]
+    prev_row = df_sem.iloc[-2]
+
+    results = {}
+    for metric in metric_cols:
+        if metric in last_row.index and metric in prev_row.index:
+            last_val = last_row[metric]
+            prev_val = prev_row[metric]
+
+            # Convert to None if NaN
+            last_val = None if pd.isna(last_val) else float(last_val)
+            prev_val = None if pd.isna(prev_val) else float(prev_val)
+
+            results[metric] = (prev_val, last_val)
+
+    return results
+
+
+def compute_wow(df_sem: pd.DataFrame, decimals: int = 2) -> Dict[str, Optional[float]]:
+    """
+    Compute Week-over-Week percentage change for each metric.
+
+    Args:
+        df_sem: Weekly DataFrame
+        decimals: Number of decimal places to round to
+
+    Returns:
+        Dictionary mapping metric names to WOW percentage change
+        Returns NaN if prev==0 or if fewer than 2 non-NaN values exist
+    """
+    last_prev_values = compute_last_prev(df_sem)
+
+    results = {}
+    for metric, (prev_val, last_val) in last_prev_values.items():
+        if prev_val is None or last_val is None:
+            results[metric] = None
+        elif prev_val == 0:
+            results[metric] = None  # Can't calculate percentage from zero base
+        else:
+            wow_pct = ((last_val - prev_val) / prev_val) * 100
+            results[metric] = round(wow_pct, decimals)
+
+    return results
+
+
+def attach_wow(df_sem: pd.DataFrame, apply_to: str = 'last', decimals: int = 2) -> pd.DataFrame:
+    """
+    Attach WOW percentage columns to the DataFrame.
+
+    Args:
+        df_sem: Weekly DataFrame
+        apply_to: 'last' to add WOW only to last row, 'all' for all rows
+        decimals: Number of decimal places
+
+    Returns:
+        DataFrame with added <metric>_WOW_PCT columns
+    """
+    df_result = df_sem.copy()
+
+    # Identify metric columns
+    metadata_cols = ['WeekIndex', 'StartDate', 'EndDate', 'Date', 'Intervalo',
+                     'WeekEndingWeekday', 'WkLabel', 'WkLabelFull', 'week_ending',
+                     'week_start', 'days_in_week', 'week_number', 'year', 'relative_week']
+
+    metric_cols = [col for col in df_sem.columns if col not in metadata_cols]
+
+    if apply_to == 'last':
+        # Calculate WOW for last week only
+        if len(df_result) >= 2:
+            wow_values = compute_wow(df_result, decimals)
+
+            # Add WOW columns, set value only for last row
+            for metric in metric_cols:
+                wow_col = f"{metric}_WOW_PCT"
+                df_result[wow_col] = np.nan
+                if metric in wow_values:
+                    df_result.loc[len(df_result) - 1, wow_col] = wow_values[metric]
+
+    elif apply_to == 'all':
+        # Calculate WOW for all weeks (each compared to previous)
+        for metric in metric_cols:
+            wow_col = f"{metric}_WOW_PCT"
+            df_result[wow_col] = np.nan
+
+            for i in range(1, len(df_result)):
+                prev_val = df_result.iloc[i - 1][metric]
+                curr_val = df_result.iloc[i][metric]
+
+                if pd.notna(prev_val) and pd.notna(curr_val) and prev_val != 0:
+                    wow_pct = ((curr_val - prev_val) / prev_val) * 100
+                    df_result.loc[i, wow_col] = round(wow_pct, decimals)
+
+    return df_result
+
+
+def get_last_week_row(df_sem: pd.DataFrame) -> pd.Series:
+    """
+    Get the last week's data row.
+
+    Args:
+        df_sem: Weekly DataFrame
+
+    Returns:
+        Series with last week's data
+    """
+    if df_sem.empty:
+        return pd.Series()
+
+    return df_sem.iloc[-1]
+
+
+def get_prev_week_row(df_sem: pd.DataFrame) -> pd.Series:
+    """
+    Get the previous week's data row.
+
+    Args:
+        df_sem: Weekly DataFrame
+
+    Returns:
+        Series with previous week's data
+    """
+    if len(df_sem) < 2:
+        return pd.Series()
+
+    return df_sem.iloc[-2]
+
+
 # Backward compatibility functions
 def create_trailing_window(
     df: pd.DataFrame,
@@ -326,7 +783,7 @@ def create_trailing_window(
     # Build aggregation map from all numeric columns
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     agg_map = {col: aggregation for col in numeric_cols}
-    
+
     return create_trailing_six_weeks(
         df,
         end_date,

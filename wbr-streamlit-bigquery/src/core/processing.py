@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
+from typing import Optional, List, Dict, Any
 
 # Mantemos funções simples existentes para compatibilidade com outros usos
 def process_data(df):
@@ -254,3 +255,666 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
         'ano_atual': ano_atual,
         'ano_anterior': ano_anterior
     }
+
+
+# ============================================
+# ENHANCED WBR AGGREGATION SYSTEM
+# ============================================
+
+def compute_trailing_weeks(
+    daily_df: pd.DataFrame,
+    cfg,  # WBRConfig instance
+    *,
+    fill_missing_weeks: bool = True,
+    strict_7day_span: bool = True,
+    reindex_missing_days: bool = False,
+    use_absolute_week_number: bool = False
+) -> pd.DataFrame:
+    """
+    Generate weekly DataFrame with exactly N trailing weeks based on week_ending anchor.
+
+    This function implements non-ISO calendar logic: weeks are always 7-day blocks
+    ending on the specified week_ending date, regardless of ISO week boundaries.
+
+    Each row represents the aggregation of daily records present between StartDate and
+    EndDate (inclusive). Weeks are fixed 7-day blocks determined by counting backwards
+    from week_ending. Non-existent days are not fabricated; if reindex_missing_days=True,
+    they appear only as NaN before aggregation.
+
+    Args:
+        daily_df: DataFrame with daily data (must have date column)
+        cfg: WBRConfig instance with week_ending, trailing_weeks, and aggregation functions
+        fill_missing_weeks: If True, pad with empty weeks to ensure exact N weeks (default: True)
+        strict_7day_span: If True, enforce exactly 7-day week spans (default: True)
+        reindex_missing_days: If True, fill missing days with NaN before aggregation (default: False)
+        use_absolute_week_number: If True, use cfg.week_number for labeling (default: False)
+
+    Returns:
+        DataFrame with weekly aggregations, exactly N weeks with columns:
+        [WeekIndex, StartDate, EndDate, Date, Intervalo, WeekEndingWeekday,
+         WkLabel, WkLabelFull, <metrics...>]
+
+    Raises:
+        ValueError: For invalid configuration or data issues
+        KeyError: If aggregation columns not found in DataFrame
+    """
+    # Validate inputs
+    if daily_df is None or daily_df.empty:
+        raise ValueError("daily_df cannot be None or empty")
+
+    # Check if cfg has the required attributes instead of isinstance check
+    # This avoids import issues
+    if not hasattr(cfg, 'week_ending') or not hasattr(cfg, 'trailing_weeks') or not hasattr(cfg, 'aggf'):
+        raise ValueError("cfg must be a WBRConfig instance with week_ending, trailing_weeks, and aggf attributes")
+
+    # Validate aggregation functions against DataFrame columns
+    cfg.validate_aggf_columns(daily_df.columns.tolist())
+
+    # Work with a copy to avoid modifying original data
+    df_work = daily_df.copy()
+
+    # Auto-detect date column - normalize to 'Date' for consistency
+    date_col = None
+    for possible_col in ['date', 'Date', 'DATE']:
+        if possible_col in df_work.columns:
+            date_col = possible_col
+            break
+
+    if date_col is None:
+        raise ValueError("No date column found. DataFrame must contain 'date', 'Date', or 'DATE' column")
+
+    # Normalize column name to 'Date' as per specification
+    if date_col != 'Date':
+        df_work = df_work.rename(columns={date_col: 'Date'})
+        date_col = 'Date'
+
+    # Ensure date column is datetime
+    df_work['Date'] = pd.to_datetime(df_work['Date'])
+
+    # Remove duplicates by aggregating (sum for numeric columns)
+    if df_work['Date'].duplicated().any():
+        numeric_cols = df_work.select_dtypes(include=[np.number]).columns.tolist()
+        agg_dict = {col: 'sum' for col in numeric_cols}
+        df_work = df_work.groupby('Date').agg(agg_dict).reset_index()
+
+    # Sort by date for consistency
+    df_work = df_work.sort_values('Date').reset_index(drop=True)
+
+    # Calculate week boundaries using strict 7-day spans
+    week_ending = pd.to_datetime(cfg.week_ending)
+    trailing_weeks = cfg.trailing_weeks
+
+    # Generate chronological list of anchors: A_1 ... A_N where A_N = cfg.week_ending
+    # and A_i = week_ending - 7*(N-i) days
+    week_anchors = []
+    for i in range(trailing_weeks):
+        # Week i ends (trailing_weeks - 1 - i) * 7 days before week_ending
+        days_back = (trailing_weeks - 1 - i) * 7
+        anchor = week_ending - timedelta(days=days_back)
+        week_anchors.append(anchor)
+
+    # Generate week boundaries (N weeks of exactly 7 days each)
+    week_boundaries = []
+    for anchor in week_anchors:
+        week_end = anchor
+        week_start = week_end - timedelta(days=6)  # 7-day span: start to end inclusive
+        week_boundaries.append((week_start, week_end))
+
+    # Aggregate data for each week
+    weekly_results = []
+
+    for week_idx, (week_start, week_end) in enumerate(week_boundaries):
+        # If reindex_missing_days is True, create full date range for this week
+        if reindex_missing_days:
+            week_date_range = pd.date_range(start=week_start, end=week_end, freq='D')
+            week_df = pd.DataFrame({'Date': week_date_range})
+            # Merge with actual data
+            week_data = week_df.merge(
+                df_work[(df_work['Date'] >= week_start) & (df_work['Date'] <= week_end)],
+                on='Date',
+                how='left'
+            )
+        else:
+            # Filter data for this week (inclusive of both start and end dates)
+            mask = (df_work['Date'] >= week_start) & (df_work['Date'] <= week_end)
+            week_data = df_work.loc[mask].copy()
+
+        # Initialize week result with required metadata
+        week_result = {
+            'WeekIndex': week_idx + 1,  # 1-based index (1 = oldest week)
+            'StartDate': week_start,
+            'EndDate': week_end,
+            'Date': week_end,  # Redundancy as per specification
+            'Intervalo': f"{week_start.strftime('%Y-%m-%d')} → {week_end.strftime('%Y-%m-%d')}",
+            'WeekEndingWeekday': week_end.strftime('%a'),  # Short weekday name (Mon, Tue, etc.)
+        }
+
+        # Calculate WkLabel based on mode
+        if use_absolute_week_number and cfg.week_number is not None:
+            # Mode B: Use cfg.week_number for the last week and decrement backwards
+            week_result['WkLabel'] = f"Wk{cfg.week_number - (trailing_weeks - 1 - week_idx)}"
+        else:
+            # Mode A (default): Simple Wk1..WkN
+            week_result['WkLabel'] = f"Wk{week_idx + 1}"
+
+        # WkLabelFull combines label with week ending date
+        week_result['WkLabelFull'] = f"{week_result['WkLabel']} (WE {week_end.strftime('%Y-%m-%d')})"
+
+        if week_data.empty:
+            # No data for this week
+            if fill_missing_weeks:
+                # Fill with 0 or NaN based on aggregation function
+                # Document that we don't create artificial data
+                for col, agg_func in cfg.aggf.items():
+                    if agg_func in ['sum', 'count']:
+                        week_result[col] = 0  # Sum/count of nothing is 0
+                    else:
+                        week_result[col] = np.nan  # No data for averages, etc.
+            else:
+                # Skip this week entirely if not filling missing weeks
+                continue
+        else:
+            # Aggregate data for this week - only aggregate existing rows
+            # No artificial data creation as per specification
+            for col, agg_func in cfg.aggf.items():
+                if col not in week_data.columns:
+                    week_result[col] = np.nan
+                    continue
+
+                try:
+                    if agg_func == 'sum':
+                        week_result[col] = week_data[col].sum()
+                    elif agg_func == 'mean':
+                        week_result[col] = week_data[col].mean()
+                    elif agg_func == 'median':
+                        week_result[col] = week_data[col].median()
+                    elif agg_func == 'min':
+                        week_result[col] = week_data[col].min()
+                    elif agg_func == 'max':
+                        week_result[col] = week_data[col].max()
+                    elif agg_func == 'count':
+                        week_result[col] = week_data[col].count()
+                    elif agg_func == 'std':
+                        week_result[col] = week_data[col].std()
+                    elif agg_func == 'var':
+                        week_result[col] = week_data[col].var()
+                    else:
+                        # Fallback to pandas aggregation
+                        week_result[col] = week_data[col].agg(agg_func)
+
+                except Exception as e:
+                    import logging
+                    logging.warning(f"Aggregation failed for column {col} with function {agg_func}: {e}")
+                    week_result[col] = np.nan
+
+        weekly_results.append(week_result)
+
+    # Convert to DataFrame
+    result_df = pd.DataFrame(weekly_results)
+
+    # Ensure we have exactly N weeks if fill_missing_weeks is True
+    if fill_missing_weeks and len(result_df) < trailing_weeks:
+        # This shouldn't happen with the new logic, but keep as safety check
+        raise ValueError(f"Internal error: Expected {trailing_weeks} weeks, got {len(result_df)}")
+
+    # Sort by EndDate to ensure chronological order (oldest to most recent)
+    result_df = result_df.sort_values('EndDate').reset_index(drop=True)
+
+    # Reorder columns as per specification
+    # [WeekIndex, StartDate, EndDate, Date, Intervalo, WeekEndingWeekday, WkLabel, WkLabelFull, <metrics...>]
+    base_columns = ['WeekIndex', 'StartDate', 'EndDate', 'Date', 'Intervalo',
+                    'WeekEndingWeekday', 'WkLabel', 'WkLabelFull']
+
+    # Add metric columns
+    metric_columns = list(cfg.aggf.keys())
+
+    # Combine column order
+    column_order = base_columns + metric_columns
+
+    # Reorder DataFrame columns
+    available_columns = [col for col in column_order if col in result_df.columns]
+    result_df = result_df[available_columns]
+
+    # Validate result
+    if fill_missing_weeks and len(result_df) != trailing_weeks:
+        raise ValueError(f"Expected exactly {trailing_weeks} weeks, got {len(result_df)}")
+
+    return result_df
+
+
+# ============================================
+# VALIDATION FUNCTIONS
+# ============================================
+
+def validate_wbr_inputs(
+    daily_df: pd.DataFrame,
+    cfg,  # WBRConfig instance
+    strict_validation: bool = True
+) -> Dict[str, Any]:
+    """
+    Comprehensive validation of WBR inputs.
+
+    Args:
+        daily_df: Input DataFrame with daily data
+        cfg: WBRConfig instance
+        strict_validation: If True, raise exceptions for errors
+
+    Returns:
+        Dictionary with validation results
+
+    Raises:
+        ValueError: If strict_validation=True and validation fails
+    """
+    validation_result = {
+        'valid': True,
+        'errors': [],
+        'warnings': [],
+        'info': []
+    }
+
+    # Validate DataFrame
+    if daily_df is None:
+        validation_result['errors'].append("DataFrame is None")
+        validation_result['valid'] = False
+    elif daily_df.empty:
+        validation_result['errors'].append("DataFrame is empty")
+        validation_result['valid'] = False
+    else:
+        validation_result['info'].append(f"DataFrame has {len(daily_df)} rows")
+
+        # Check for date column
+        date_cols = [col for col in ['date', 'Date', 'DATE'] if col in daily_df.columns]
+        if not date_cols:
+            validation_result['errors'].append("No date column found (expected 'date', 'Date', or 'DATE')")
+            validation_result['valid'] = False
+        else:
+            date_col = date_cols[0]
+            validation_result['info'].append(f"Using date column: {date_col}")
+
+            # Validate date column data type
+            if not pd.api.types.is_datetime64_any_dtype(daily_df[date_col]):
+                try:
+                    pd.to_datetime(daily_df[date_col])
+                    validation_result['warnings'].append(f"Date column '{date_col}' is not datetime but can be converted")
+                except Exception as e:
+                    validation_result['errors'].append(f"Date column '{date_col}' cannot be converted to datetime: {e}")
+                    validation_result['valid'] = False
+
+            # Check for date range coverage
+            if validation_result['valid']:
+                df_dates = pd.to_datetime(daily_df[date_col])
+                min_date = df_dates.min()
+                max_date = df_dates.max()
+
+                validation_result['info'].append(f"Date range: {min_date.date()} to {max_date.date()}")
+
+                # Check if week_ending is within or after data range
+                if hasattr(cfg, 'week_ending') and cfg.week_ending:
+                    if cfg.week_ending.date() < min_date.date():
+                        validation_result['warnings'].append(f"week_ending ({cfg.week_ending.date()}) is before data start ({min_date.date()})")
+                    elif cfg.week_ending.date() > max_date.date():
+                        validation_result['warnings'].append(f"week_ending ({cfg.week_ending.date()}) is after data end ({max_date.date()})")
+
+                # Check if we have enough data for trailing weeks
+                if hasattr(cfg, 'trailing_weeks'):
+                    days_needed = cfg.trailing_weeks * 7
+                    days_available = (max_date - min_date).days + 1
+                    if days_available < days_needed:
+                        validation_result['warnings'].append(f"Limited data: need {days_needed} days for {cfg.trailing_weeks} weeks, have {days_available} days")
+
+    # Validate WBRConfig
+    if not hasattr(cfg, 'week_ending') or not hasattr(cfg, 'trailing_weeks') or not hasattr(cfg, 'aggf'):
+        validation_result['errors'].append("cfg must be a WBRConfig instance with required attributes")
+        validation_result['valid'] = False
+    else:
+        validation_result['info'].append(f"WBRConfig: {cfg.trailing_weeks} weeks ending {cfg.week_ending.date()}")
+
+        # Validate aggregation functions
+        if cfg.aggf:
+            try:
+                cfg.validate_aggf_columns(daily_df.columns.tolist())
+                validation_result['info'].append(f"Aggregation functions validated for {len(cfg.aggf)} columns")
+            except ValueError as e:
+                validation_result['errors'].append(f"Aggregation validation failed: {e}")
+                validation_result['valid'] = False
+        else:
+            validation_result['warnings'].append("No aggregation functions specified in WBRConfig")
+
+    # Check for data quality issues
+    if validation_result['valid'] and not daily_df.empty:
+        # Check for duplicates
+        if len(date_cols) > 0:
+            date_col = date_cols[0]
+            duplicates = daily_df.duplicated(subset=[date_col]).sum()
+            if duplicates > 0:
+                validation_result['warnings'].append(f"Found {duplicates} duplicate dates")
+
+        # Check for missing values in key columns
+        if cfg.aggf:
+            for col in cfg.aggf.keys():
+                if col in daily_df.columns:
+                    missing_count = daily_df[col].isna().sum()
+                    if missing_count > 0:
+                        missing_pct = (missing_count / len(daily_df)) * 100
+                        validation_result['warnings'].append(f"Column '{col}' has {missing_count} missing values ({missing_pct:.1f}%)")
+
+    # Summary
+    validation_result['summary'] = {
+        'total_errors': len(validation_result['errors']),
+        'total_warnings': len(validation_result['warnings']),
+        'validation_passed': validation_result['valid']
+    }
+
+    # Raise exception if strict validation and errors found
+    if strict_validation and not validation_result['valid']:
+        error_msg = "WBR validation failed:\n" + "\n".join(validation_result['errors'])
+        raise ValueError(error_msg)
+
+    return validation_result
+
+
+def validate_weekly_output(
+    weekly_df: pd.DataFrame,
+    expected_weeks: int,
+    required_columns: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Validate the output of compute_trailing_weeks function.
+
+    Args:
+        weekly_df: Output DataFrame from compute_trailing_weeks
+        expected_weeks: Expected number of weeks
+        required_columns: List of columns that must be present
+
+    Returns:
+        Dictionary with validation results
+    """
+    validation_result = {
+        'valid': True,
+        'errors': [],
+        'warnings': [],
+        'info': []
+    }
+
+    if weekly_df is None:
+        validation_result['errors'].append("Weekly DataFrame is None")
+        validation_result['valid'] = False
+        return validation_result
+
+    if weekly_df.empty:
+        validation_result['errors'].append("Weekly DataFrame is empty")
+        validation_result['valid'] = False
+        return validation_result
+
+    # Check number of weeks
+    actual_weeks = len(weekly_df)
+    if actual_weeks != expected_weeks:
+        validation_result['errors'].append(f"Expected {expected_weeks} weeks, got {actual_weeks}")
+        validation_result['valid'] = False
+    else:
+        validation_result['info'].append(f"Correct number of weeks: {actual_weeks}")
+
+    # Check required columns
+    if required_columns:
+        missing_cols = set(required_columns) - set(weekly_df.columns)
+        if missing_cols:
+            validation_result['errors'].append(f"Missing required columns: {missing_cols}")
+            validation_result['valid'] = False
+
+    # Check for EndDate column (previously week_ending)
+    date_col = 'EndDate' if 'EndDate' in weekly_df.columns else 'week_ending' if 'week_ending' in weekly_df.columns else None
+
+    if date_col is None:
+        validation_result['errors'].append("Missing 'EndDate' or 'week_ending' column")
+        validation_result['valid'] = False
+    else:
+        # Validate week ending dates
+        week_endings = pd.to_datetime(weekly_df[date_col])
+
+        # Check chronological order
+        if not week_endings.is_monotonic_increasing:
+            validation_result['warnings'].append("Week ending dates are not in chronological order")
+
+        # Check for 7-day intervals (allowing for some tolerance)
+        if len(week_endings) > 1:
+            intervals = week_endings.diff().dt.days.dropna()
+            if not all(6 <= interval <= 8 for interval in intervals):  # Allow 1-day tolerance
+                validation_result['warnings'].append("Week intervals are not exactly 7 days")
+
+        validation_result['info'].append(f"Week range: {week_endings.min().date()} to {week_endings.max().date()}")
+
+    return validation_result
+
+
+# ============================================
+# INTERNAL TEST AND DEMONSTRATION
+# ============================================
+
+if __name__ == "__main__":
+    """
+    Internal test block to demonstrate WBR functionality.
+    Run this module directly to see the WBR system in action.
+    """
+    import sys
+    import os
+
+    # Add parent directory to path for imports
+    sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+    try:
+        from src.config.settings import WBRConfig
+        from src.core.wbr_utility import (compute_wow, compute_last_prev, attach_wow,
+                                          get_last_week_row, get_prev_week_row)
+    except ImportError:
+        # Alternative imports for direct execution
+        from config.settings import WBRConfig
+        from wbr_utility import (compute_wow, compute_last_prev, attach_wow,
+                                 get_last_week_row, get_prev_week_row)
+
+    print("=" * 60)
+    print("WBR AGGREGATION SYSTEM - DEMONSTRATION")
+    print("=" * 60)
+
+    try:
+        # 1. Create sample daily data
+        print("\n1. Creating sample daily data...")
+
+        import random
+        random.seed(42)  # For reproducible results
+
+        start_date = datetime(2024, 1, 1)
+        end_date = datetime(2024, 3, 31)  # 3 months of data
+
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+
+        # Generate realistic sample data
+        sample_data = []
+        for date in date_range:
+            # Simulate weekly patterns and trends
+            base_orders = 100 + (date.weekday() < 5) * 50  # Higher on weekdays
+            base_revenue = base_orders * random.uniform(45, 85)
+
+            # Add some trend and noise
+            trend_factor = 1 + (date - start_date).days * 0.001  # Slight upward trend
+            noise_factor = random.uniform(0.8, 1.2)
+
+            orders = int(base_orders * trend_factor * noise_factor)
+            revenue = round(base_revenue * trend_factor * noise_factor, 2)
+
+            sample_data.append({
+                'date': date,
+                'orders': orders,
+                'revenue': revenue,
+                'customers': int(orders * random.uniform(0.7, 0.9))  # Some customers place multiple orders
+            })
+
+        daily_df = pd.DataFrame(sample_data)
+        print(f"Generated {len(daily_df)} days of sample data")
+        print(f"Date range: {daily_df['date'].min().date()} to {daily_df['date'].max().date()}")
+        print(f"Sample data preview:\n{daily_df.head()}")
+
+        # 2. Create WBR Configuration
+        print("\n2. Creating WBR Configuration...")
+
+        # Use last day of March as week_ending
+        week_ending_date = "31-MAR-2024"
+
+        config = WBRConfig(
+            week_ending=week_ending_date,
+            trailing_weeks=6,
+            aggf={
+                'orders': 'sum',
+                'revenue': 'sum',
+                'customers': 'sum'
+            },
+            week_number=13  # Example week number
+        )
+        print(f"Created WBRConfig: {config}")
+
+        # 3. Validate inputs
+        print("\n3. Validating inputs...")
+        validation_result = validate_wbr_inputs(daily_df, config, strict_validation=False)
+
+        print(f"Validation passed: {validation_result['valid']}")
+        if validation_result['errors']:
+            print(f"Errors: {validation_result['errors']}")
+        if validation_result['warnings']:
+            print(f"Warnings: {validation_result['warnings']}")
+        for info in validation_result['info']:
+            print(f"Info: {info}")
+
+        # 4. Compute trailing weeks
+        print("\n4. Computing trailing weeks aggregation...")
+
+        weekly_df = compute_trailing_weeks(
+            daily_df,
+            config,
+            fill_missing_weeks=True,
+            strict_7day_span=True,
+            use_absolute_week_number=True
+        )
+
+        print(f"Generated weekly DataFrame with {len(weekly_df)} weeks")
+        print("\nWeekly aggregation results:")
+        # Use the new column names from specification
+        display_cols = ['WeekIndex', 'EndDate', 'WkLabel', 'orders', 'revenue', 'customers']
+        print(weekly_df[display_cols].to_string())
+
+        # 5. Validate output
+        print("\n5. Validating weekly output...")
+        output_validation = validate_weekly_output(
+            weekly_df,
+            expected_weeks=6,
+            required_columns=['orders', 'revenue', 'customers']
+        )
+
+        print(f"Output validation passed: {output_validation['valid']}")
+        if output_validation['errors']:
+            print(f"Errors: {output_validation['errors']}")
+        if output_validation['warnings']:
+            print(f"Warnings: {output_validation['warnings']}")
+        for info in output_validation['info']:
+            print(f"Info: {info}")
+
+        # 6. Demonstrate WOW comparison
+        print("\n6. Computing Week-over-Week (WOW) comparisons...")
+
+        wow_results = compute_wow(weekly_df)
+        for metric, wow_pct in wow_results.items():
+            if wow_pct is not None:
+                print(f"  {metric.upper()}: {wow_pct:.1f}% change")
+            else:
+                print(f"  {metric.upper()}: No WOW data available")
+
+        # 7. Demonstrate last vs prev comparison
+        print("\n7. Computing last vs previous comparison...")
+
+        last_prev_results = compute_last_prev(weekly_df)
+        for metric, (prev, last) in last_prev_results.items():
+            print(f"\n{metric.upper()}:")
+            prev_str = f"{prev:.2f}" if prev is not None else "N/A"
+            last_str = f"{last:.2f}" if last is not None else "N/A"
+            print(f"  Previous week: {prev_str}")
+            print(f"  Last week: {last_str}")
+            if prev and last:
+                change = last - prev
+                pct_change = (change / prev * 100) if prev != 0 else 0
+                print(f"  Change: {change:.2f} ({pct_change:.1f}%)")
+
+        # 8. Test attach_wow function
+        print("\n8. Testing attach_wow function...")
+
+        df_with_wow = attach_wow(weekly_df, apply_to='last', decimals=2)
+        last_row = df_with_wow.iloc[-1]
+        print("WOW columns added to last week:")
+        for col in df_with_wow.columns:
+            if 'WOW_PCT' in col:
+                value = last_row[col]
+                if pd.notna(value):
+                    print(f"  {col}: {value:.2f}%")
+
+        # 9. Test get_last_week_row and get_prev_week_row
+        print("\n9. Testing week row accessor functions...")
+
+        last_week = get_last_week_row(weekly_df)
+        prev_week = get_prev_week_row(weekly_df)
+
+        print(f"Last week (WeekIndex={last_week['WeekIndex']}, {last_week['WkLabel']}):")
+        print(f"  Date range: {last_week['Intervalo']}")
+        print(f"  Orders: {last_week['orders']}")
+
+        print(f"Previous week (WeekIndex={prev_week['WeekIndex']}, {prev_week['WkLabel']}):")
+        print(f"  Date range: {prev_week['Intervalo']}")
+        print(f"  Orders: {prev_week['orders']}")
+
+        # 10. Test YAML configuration
+        print("\n10. Testing YAML configuration...")
+
+        yaml_config = """
+        week_ending: "31-MAR-2024"
+        trailing_weeks: 4
+        week_number: 13
+        aggf:
+          orders: sum
+          revenue: sum
+          customers: sum
+        """
+
+        try:
+            config_from_yaml = WBRConfig.from_yaml(yaml_config)
+            print(f"Created from YAML: {config_from_yaml}")
+        except ImportError:
+            print("YAML support not available (PyYAML not installed)")
+            # Test with dict instead
+            print("Testing from_dict as alternative...")
+            config_dict = {
+                'week_ending': '31-MAR-2024',
+                'trailing_weeks': 4,
+                'week_number': 13,
+                'aggf': {'orders': 'sum', 'revenue': 'sum', 'customers': 'sum'}
+            }
+            config_from_yaml = WBRConfig.from_dict(config_dict)
+            print(f"Created from dict: {config_from_yaml}")
+
+        # Test with 4 weeks instead of 6
+        weekly_df_4 = compute_trailing_weeks(daily_df, config_from_yaml)
+        print(f"4-week aggregation generated {len(weekly_df_4)} weeks")
+
+        # Verify column structure
+        expected_cols = ['WeekIndex', 'StartDate', 'EndDate', 'Date', 'Intervalo',
+                        'WeekEndingWeekday', 'WkLabel', 'WkLabelFull']
+        missing = [col for col in expected_cols if col not in weekly_df_4.columns]
+        if not missing:
+            print("✓ All required columns present in output")
+        else:
+            print(f"✗ Missing columns: {missing}")
+
+        print("\n" + "=" * 60)
+        print("WBR AGGREGATION SYSTEM DEMONSTRATION COMPLETED SUCCESSFULLY!")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"\nERROR during demonstration: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

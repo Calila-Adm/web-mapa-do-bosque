@@ -26,6 +26,12 @@ class KPIType(Enum):
     QTD = "qtd"  # Quarter to Date
     YTD = "ytd"  # Year to Date
 
+class DatabaseType(Enum):
+    """Tipos de bancos de dados suportados."""
+    BIGQUERY = "bigquery"
+    POSTGRESQL = "postgresql"
+    SUPABASE = "supabase"
+
 # Table configurations
 TABLES_CONFIG = {
     MetricType.PESSOAS: {

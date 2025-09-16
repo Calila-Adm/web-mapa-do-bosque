@@ -1,7 +1,6 @@
 from google.cloud import bigquery
 import os
 
-
 class BigQueryClient:
     def __init__(self):
         # Autentica sob demanda para facilitar testes sem credenciais
