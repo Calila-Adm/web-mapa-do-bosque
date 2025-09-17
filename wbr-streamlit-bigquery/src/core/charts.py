@@ -324,7 +324,7 @@ def criar_grafico_wbr(dados: dict, df: pd.DataFrame, data_ref: pd.Timestamp, tit
                 x=x_completo,
                 y=y_completo,
                 name=f'{unidade.upper()} {ano_atual} (Meses)',
-                line=dict(color='#00008B', width=2.5),  # Removido spline para não interferir
+                line=dict(color='#00008B', width=2.5, shape='spline', smoothing=1.3),
                 mode='lines+markers',
                 marker=dict(color='#00008B', size=8, symbol='diamond'),
                 connectgaps=False,

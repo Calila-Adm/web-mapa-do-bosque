@@ -18,13 +18,6 @@ class InstagramQueries:
         Returns:
             Query SQL para contagem de posts
         """
-        # Filtro de data - espelhando a lógica do queries.sql
-        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
-        date_filter = """
-        AND DATE(createdAt) BETWEEN
-            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
-            AND CURRENT_DATE
-        """
 
         # Filtro de shopping
         shopping_where = ""
@@ -39,32 +32,35 @@ class InstagramQueries:
         FROM (
             SELECT
                 'SCIB' AS SHOPPING,
-                createdAt AS DATA,
+                DATE("postedAt") AS DATA,
                 COUNT(DISTINCT id) AS value
-            FROM {self.schemas['SCIB']}."Post"
-            WHERE 1 = 1
-            {date_filter}
+            FROM "{self.schemas['SCIB']}"."Post"
+            WHERE
+                {{{{date_filter}}}}
+            GROUP BY DATE("postedAt")
 
             UNION ALL
 
             SELECT
                 'SBGP' AS SHOPPING,
-                createdAt AS DATA,
+                DATE("postedAt") AS DATA,
                 COUNT(DISTINCT id) AS value
-            FROM {self.schemas['SBGP']}."Post"
-            WHERE 1 = 1
-            {date_filter}
+            FROM "{self.schemas['SBGP']}"."Post"
+            WHERE
+                {{{{date_filter}}}}
+            GROUP BY DATE("postedAt")
 
             UNION ALL
 
             SELECT
                 'SBI' AS SHOPPING,
-                createdAt AS DATA,
+                DATE("postedAt") AS DATA,
                 COUNT(DISTINCT id) AS value
-            FROM {self.schemas['SBI']}."Post"
-            WHERE 1 = 1
-            {date_filter}
-        )
+            FROM "{self.schemas['SBI']}"."Post"
+            WHERE
+                {{{{date_filter}}}}
+            GROUP BY DATE("postedAt")
+        ) AS combined_data
         WHERE 1 = 1
         {shopping_where}
         ORDER BY DATA DESC, SHOPPING
@@ -97,13 +93,6 @@ class InstagramQueries:
         Returns:
             Query SQL combinando dados dos 3 shoppings
         """
-        # Filtro de data - espelhando a lógica do queries.sql
-        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
-        date_filter = """
-        AND DATE(P.createdAt) BETWEEN
-            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
-            AND CURRENT_DATE
-        """
 
         # Filtro de shopping
         shopping_where = ""
@@ -113,57 +102,57 @@ class InstagramQueries:
         query = f"""
         SELECT
             shopping,
-            DATE(createdAt) as data,
+            data,
             SUM(likes) as total_likes,
             SUM(comments) as total_comentarios,
             SUM(shares) as total_compartilhamentos,
-            SUM(saves) as total_salvos,
-            SUM(likes + comments + shares + saves) as engajamento_total,
+            SUM(saved) as total_salvos,
+            SUM(likes + comments + shares + saved) as engajamento_total,
             COUNT(*) as total_posts
         FROM (
             SELECT
                 'SCIB' as shopping,
-                P.createdAt,
+                DATE(P."postedAt") as data,
                 I.likes,
                 I.comments,
                 I.shares,
-                I.saves
-            FROM {self.schemas['SCIB']}."Post" as P
-            JOIN {self.schemas['SCIB']}."PostInsight" as I ON P.id = I."postId"
-            WHERE 1 = 1
-            {date_filter}
+                I.saved
+            FROM "{self.schemas['SCIB']}"."Post" as P
+            JOIN "{self.schemas['SCIB']}"."PostInsight" as I ON P.id = I."postId"
+            WHERE
+                {{{{date_filter_with_alias}}}}
 
             UNION ALL
 
             SELECT
                 'SBGP' as shopping,
-                P.createdAt,
+                DATE(P."postedAt") as data,
                 I.likes,
                 I.comments,
                 I.shares,
-                I.saves
-            FROM {self.schemas['SBGP']}."Post" as P
-            JOIN {self.schemas['SBGP']}."PostInsight" as I ON P.id = I."postId"
-            WHERE 1 = 1
-            {date_filter}
+                I.saved
+            FROM "{self.schemas['SBGP']}"."Post" as P
+            JOIN "{self.schemas['SBGP']}"."PostInsight" as I ON P.id = I."postId"
+            WHERE
+                {{{{date_filter_with_alias}}}}
 
             UNION ALL
 
             SELECT
                 'SBI' as shopping,
-                P.createdAt,
+                DATE(P."postedAt") as data,
                 I.likes,
                 I.comments,
                 I.shares,
-                I.saves
-            FROM {self.schemas['SBI']}."Post" as P
-            JOIN {self.schemas['SBI']}."PostInsight" as I ON P.id = I."postId"
-            WHERE 1 = 1
-            {date_filter}
+                I.saved
+            FROM "{self.schemas['SBI']}"."Post" as P
+            JOIN "{self.schemas['SBI']}"."PostInsight" as I ON P.id = I."postId"
+            WHERE
+                {{{{date_filter_with_alias}}}}
         ) as combined_data
         WHERE 1 = 1
         {shopping_where}
-        GROUP BY shopping, DATE(createdAt)
+        GROUP BY shopping, data
         ORDER BY data DESC, shopping
         """
 
