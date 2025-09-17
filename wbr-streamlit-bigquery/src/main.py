@@ -631,6 +631,14 @@ if os.getenv("SUPABASE_DATABASE_URL"):
                 )
                 if not df.empty:
                     df['data'] = pd.to_datetime(df['data'])
+                    # Aplicar os mesmos filtros dos demais
+                    df = apply_filters(
+                        df,
+                        date_start=date_start,
+                        date_end=date_end,
+                        year_filter=None,  # Adapte se necessário
+                        shopping_filter=shopping_filter
+                    )
                 return df
             except Exception as e:
                 st.error(f"Erro ao carregar dados de engajamento: {str(e)}")
@@ -656,6 +664,14 @@ if os.getenv("SUPABASE_DATABASE_URL"):
                     df['data'] = pd.to_datetime(df['data'])
                     # Renomeia colunas para compatibilidade
                     df.columns = ['shopping', 'data', 'total_posts']
+                    # Aplicar os mesmos filtros dos demais
+                    df = apply_filters(
+                        df,
+                        date_start=date_start,
+                        date_end=date_end,
+                        year_filter=None,  # Adapte se necessário
+                        shopping_filter=shopping_filter
+                    )
                 return df
             except Exception as e:
                 st.error(f"Erro ao carregar contagem de posts: {str(e)}")
@@ -686,46 +702,28 @@ if os.getenv("SUPABASE_DATABASE_URL"):
 
     # Function to create time series chart
     def create_instagram_chart(df, metric_col, title, y_label):
-        """Cria gráfico de linha temporal para métrica do Instagram"""
+        """Padroniza DataFrame e utiliza render_chart do WBR"""
         if df.empty:
             st.warning(f"Sem dados disponíveis para {title}")
             return None
 
-        fig = go.Figure()
+        # Padroniza DataFrame para formato WBR
+        df_chart = df.rename(columns={
+            'data': 'date',
+            metric_col: 'metric_value'
+        })[['date', 'metric_value', 'shopping'] if 'shopping' in df.columns else ['date', 'metric_value']].copy()
 
-        # If shopping filter is active, show single line
+        # Chama render_chart do WBR para manter padrão visual
+        config = {
+            'titulo': title,
+            'icon': '',
+            'unidade': y_label,
+            'table': metric_col
+        }
+        # Se houver filtro de shopping, filtra o DataFrame
         if shopping_filter_instagram:
-            fig.add_trace(go.Scatter(
-                x=df['data'],
-                y=df[metric_col],
-                mode='lines+markers',
-                name=shopping_filter_instagram,
-                line=dict(color=shopping_colors.get(shopping_filter_instagram, '#1f77b4'), width=2),
-                marker=dict(size=6)
-            ))
-        else:
-            # Show lines for each shopping
-            for shopping in df['shopping'].unique():
-                df_shop = df[df['shopping'] == shopping]
-                fig.add_trace(go.Scatter(
-                    x=df_shop['data'],
-                    y=df_shop[metric_col],
-                    mode='lines+markers',
-                    name=shopping,
-                    line=dict(color=shopping_colors.get(shopping, '#666'), width=2),
-                    marker=dict(size=6)
-                ))
-
-        fig.update_layout(
-            title=title,
-            xaxis_title="Data",
-            yaxis_title=y_label,
-            hovermode='x unified',
-            showlegend=True if not shopping_filter_instagram else False,
-            height=400
-        )
-
-        return fig
+            df_chart = df_chart[df_chart['shopping'] == shopping_filter_instagram] if 'shopping' in df_chart.columns else df_chart
+        return render_chart(config, df_chart)
 
     # Tab 1: Engajamento Total
     with tab1:
@@ -749,6 +747,10 @@ if os.getenv("SUPABASE_DATABASE_URL"):
                     st.metric("Máximo", f"{df_engagement['engajamento_total'].max():,.0f}")
                 with col4:
                     st.metric("Posts", f"{df_engagement['total_posts'].sum():,.0f}")
+
+                # Exibir dados brutos para debug
+                with st.expander("🔎 Ver dados brutos do Supabase (Instagram)"):
+                    st.dataframe(df_engagement, use_container_width=True)
         else:
             st.info("Sem dados de engajamento disponíveis")
 

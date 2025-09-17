@@ -83,19 +83,14 @@ class SupabaseClient:
             DataFrame com dados de engajamento
         """
 
-        # Constrói WHERE clause
-        where_conditions = ["1=1"]
+        # Constrói WHERE clause - espelhando a lógica do queries.sql
+        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
+        where_clause = """
+            DATE(p."createdAt") BETWEEN
+                DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
+                AND CURRENT_DATE
+        """
         params = {}
-
-        if date_start:
-            where_conditions.append('p."createdAt"::date >= :date_start')
-            params['date_start'] = date_start
-
-        if date_end:
-            where_conditions.append('p."createdAt"::date <= :date_end')
-            params['date_end'] = date_end
-
-        where_clause = " AND ".join(where_conditions)
 
         # Query com UNION ALL para todos os shoppings
         query = f"""
@@ -174,19 +169,14 @@ class SupabaseClient:
             DataFrame com contagem de posts
         """
 
-        # Constrói WHERE clause
-        where_conditions = ["1=1"]
+        # Constrói WHERE clause - espelhando a lógica do queries.sql
+        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
+        where_clause = """
+            DATE("createdAt") BETWEEN
+                DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
+                AND CURRENT_DATE
+        """
         params = {}
-
-        if date_start:
-            where_conditions.append('"createdAt"::date >= :date_start')
-            params['date_start'] = date_start
-
-        if date_end:
-            where_conditions.append('"createdAt"::date <= :date_end')
-            params['date_end'] = date_end
-
-        where_clause = " AND ".join(where_conditions)
 
         # Query com UNION ALL
         query = f"""

@@ -18,14 +18,13 @@ class InstagramQueries:
         Returns:
             Query SQL para contagem de posts
         """
-        # Filtro de data
-        date_filter = ""
-        if date_start and date_end:
-            date_filter = f"AND createdAt BETWEEN '{date_start}' AND '{date_end}'"
-        elif date_start:
-            date_filter = f"AND createdAt >= '{date_start}'"
-        elif date_end:
-            date_filter = f"AND createdAt <= '{date_end}'"
+        # Filtro de data - espelhando a lógica do queries.sql
+        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
+        date_filter = """
+        AND DATE(createdAt) BETWEEN
+            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
+            AND CURRENT_DATE
+        """
 
         # Filtro de shopping
         shopping_where = ""
@@ -98,14 +97,13 @@ class InstagramQueries:
         Returns:
             Query SQL combinando dados dos 3 shoppings
         """
-        # Filtro de data
-        date_filter = ""
-        if date_start and date_end:
-            date_filter = f"AND P.createdAt BETWEEN '{date_start}' AND '{date_end}'"
-        elif date_start:
-            date_filter = f"AND P.createdAt >= '{date_start}'"
-        elif date_end:
-            date_filter = f"AND P.createdAt <= '{date_end}'"
+        # Filtro de data - espelhando a lógica do queries.sql
+        # Sempre pega dados dos últimos 2 anos para garantir comparações YoY
+        date_filter = """
+        AND DATE(P.createdAt) BETWEEN
+            DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '2 years'
+            AND CURRENT_DATE
+        """
 
         # Filtro de shopping
         shopping_where = ""
