@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  streamlit-ngrok:
+    build:
+      context: .
+      dockerfile: Dockerfile.ngrok
+    container_name: wbr-streamlit-ngrok
+    environment:
+      # IMPORTANTE: Adicione seu token do Ngrok aqui
+      - NGROK_AUTH_TOKEN=${NGROK_AUTH_TOKEN}
+
+      # Credenciais do Supabase (do seu .env)
+      - SUPABASE_DATABASE_URL=${SUPABASE_DATABASE_URL}
+      - SUPABASE_SCHEMA_1=${SUPABASE_SCHEMA_1}
+      - SUPABASE_SCHEMA_2=${SUPABASE_SCHEMA_2}
+      - SUPABASE_SCHEMA_3=${SUPABASE_SCHEMA_3}
+
+      # Se precisar do BigQuery
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/service-account.json
+
+    volumes:
+      # Montar credenciais se necessário
+      - ./credentials:/app/credentials:ro
+      # Montar pasta de dados
+      - ./data:/app/data
+
+    ports:
+      # Porta do Streamlit (opcional, já que vamos usar Ngrok)
+      - "8501:8501"
+      # Porta do Ngrok Web UI
+      - "4040:4040"
+
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

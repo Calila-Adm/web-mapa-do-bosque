@@ -1,0 +1,45 @@
+# Dockerfile com Ngrok integrado
+FROM python:3.11-slim
+
+# Instalar dependências do sistema e Ngrok
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Baixar e instalar Ngrok
+RUN wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
+    && tar xvzf ngrok-v3-stable-linux-amd64.tgz \
+    && mv ngrok /usr/local/bin/ \
+    && rm ngrok-v3-stable-linux-amd64.tgz
+
+WORKDIR /app
+
+# Copiar requirements e instalar dependências Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código da aplicação
+COPY . .
+
+# Script para iniciar Streamlit e Ngrok juntos
+RUN echo '#!/bin/bash\n\
+# Configurar token do Ngrok se fornecido\n\
+if [ ! -z "$NGROK_AUTH_TOKEN" ]; then\n\
+    ngrok config add-authtoken $NGROK_AUTH_TOKEN\n\
+fi\n\
+\n\
+# Iniciar Streamlit em background\n\
+streamlit run src/main.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true &\n\
+\n\
+# Aguardar Streamlit iniciar\n\
+sleep 5\n\
+\n\
+# Iniciar Ngrok\n\
+ngrok http 8501 --log=stdout' > /app/start.sh && chmod +x /app/start.sh
+
+EXPOSE 8501 4040
+
+CMD ["/app/start.sh"]

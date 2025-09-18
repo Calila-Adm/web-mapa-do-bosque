@@ -1,34 +1,48 @@
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-*.coverage
-*.egg-info/
-
-# Notebooks outputs
-notebooks/.ipynb_checkpoints/
-
-# Virtual envs
-.env/
-.venv/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
 venv/
 ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
 
-# Secrets (do not send into image)
-.secrets/
-**/credentials*/
-*.json
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.env.local
+.env.*.local
+*.log
+ngrok-latest/
+ngrok.zip
+configurar_ngrok.md
 
 # Git
 .git/
 .gitignore
 
-# OS/Editors
-.DS_Store
-.vscode/
+# Documentation
+*.md
+!README.md
 
-# Build/Cache
-build/
-dist/
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+tmp/
+temp/
