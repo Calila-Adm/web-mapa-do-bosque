@@ -691,7 +691,9 @@ if os.getenv("SUPABASE_DATABASE_URL"):
     }
 
     # Create tabs for different metrics
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "📈 Alcance",
+        "👁️ Impressões",
         "📊 Engajamento Total",
         "❤️ Likes",
         "💬 Comentários",
@@ -725,8 +727,56 @@ if os.getenv("SUPABASE_DATABASE_URL"):
             df_chart = df_chart[df_chart['shopping'] == shopping_filter_instagram] if 'shopping' in df_chart.columns else df_chart
         return render_chart(config, df_chart)
 
-    # Tab 1: Engajamento Total
+    # Tab 1: Alcance
     with tab1:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_alcance',
+                'Total de Alcance por Dia',
+                'Pessoas Alcançadas'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Alcance", f"{df_engagement['total_alcance'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_alcance'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_alcance'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de alcance disponíveis")
+
+    # Tab 2: Impressões
+    with tab2:
+        if not df_engagement.empty:
+            fig = create_instagram_chart(
+                df_engagement,
+                'total_impressoes',
+                'Total de Impressões por Dia',
+                'Quantidade de Impressões'
+            )
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Impressões", f"{df_engagement['total_impressoes'].sum():,.0f}")
+                with col2:
+                    st.metric("Média por Dia", f"{df_engagement['total_impressoes'].mean():,.0f}")
+                with col3:
+                    avg_per_post = df_engagement['total_impressoes'].sum() / max(df_engagement['total_posts'].sum(), 1)
+                    st.metric("Média por Post", f"{avg_per_post:,.0f}")
+        else:
+            st.info("Sem dados de impressões disponíveis")
+
+    # Tab 3: Engajamento Total
+    with tab3:
         if not df_engagement.empty:
             fig = create_instagram_chart(
                 df_engagement,
@@ -754,8 +804,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
         else:
             st.info("Sem dados de engajamento disponíveis")
 
-    # Tab 2: Likes
-    with tab2:
+    # Tab 4: Likes
+    with tab4:
         if not df_engagement.empty:
             fig = create_instagram_chart(
                 df_engagement,
@@ -778,8 +828,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
         else:
             st.info("Sem dados de likes disponíveis")
 
-    # Tab 3: Comentários
-    with tab3:
+    # Tab 5: Comentários
+    with tab5:
         if not df_engagement.empty:
             fig = create_instagram_chart(
                 df_engagement,
@@ -802,8 +852,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
         else:
             st.info("Sem dados de comentários disponíveis")
 
-    # Tab 4: Compartilhamentos
-    with tab4:
+    # Tab 6: Compartilhamentos
+    with tab6:
         if not df_engagement.empty:
             fig = create_instagram_chart(
                 df_engagement,
@@ -826,8 +876,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
         else:
             st.info("Sem dados de compartilhamentos disponíveis")
 
-    # Tab 5: Salvamentos
-    with tab5:
+    # Tab 7: Salvamentos
+    with tab7:
         if not df_engagement.empty:
             fig = create_instagram_chart(
                 df_engagement,
@@ -850,8 +900,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
         else:
             st.info("Sem dados de salvamentos disponíveis")
 
-    # Tab 6: Posts Publicados
-    with tab6:
+    # Tab 8: Posts Publicados
+    with tab8:
         if not df_post_count.empty:
             # Prepare data for chart
             df_post_chart = df_post_count.copy()
@@ -875,6 +925,8 @@ if os.getenv("SUPABASE_DATABASE_URL"):
                 with col3:
                     days = (df_post_chart['data'].max() - df_post_chart['data'].min()).days + 1
                     st.metric("Período (dias)", f"{days}")
+        else:
+            st.info("Sem dados de posts disponíveis")
 
 # Advanced WBR Metrics Section
 st.markdown("---")
