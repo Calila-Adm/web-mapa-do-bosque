@@ -51,17 +51,27 @@ Após iniciar, você terá:
 
 ## 📝 Ver a URL Pública
 
+### Comando Rápido (Recomendado):
 ```powershell
-# Ver logs e encontrar URL
+# Windows PowerShell - Pega direto a URL
+docker logs wbr-streamlit-ngrok 2>&1 | Select-String "url=https" | Select-Object -Last 1
+
+# Linux/Mac/Git Bash
+docker logs wbr-streamlit-ngrok 2>&1 | grep "url=https" | tail -1
+```
+
+### Ver todos os logs:
+```powershell
+# Ver logs completos
 docker logs wbr-streamlit-ngrok
 
-# Ou monitorar em tempo real
+# Monitorar em tempo real
 docker logs -f wbr-streamlit-ngrok
 ```
 
 Procure por uma linha como:
 ```
-Forwarding https://abc123.ngrok-free.app -> http://localhost:8501
+t=2025-09-18T22:20:17+0000 lvl=info msg="started tunnel" obj=tunnels name=command_line addr=http://localhost:8501 url=https://91ce18e54586.ngrok-free.app
 ```
 
 ## 🛠️ Comandos Úteis

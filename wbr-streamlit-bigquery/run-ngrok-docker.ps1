@@ -35,7 +35,13 @@ Start-Sleep -Seconds 5
 
 # Mostrar logs para ver a URL pública do Ngrok
 Write-Host "📋 URL Pública do Ngrok:" -ForegroundColor Yellow
-docker logs wbr-streamlit-ngrok 2>&1 | Select-String "https://" | Select-Object -First 1
+$ngrokUrl = docker logs wbr-streamlit-ngrok 2>&1 | Select-String "url=https" | Select-Object -Last 1
+if ($ngrokUrl) {
+    $url = ($ngrokUrl -split "url=")[1]
+    Write-Host "🌐 Acesse sua aplicação em: $url" -ForegroundColor Green
+} else {
+    Write-Host "⏳ Aguardando URL... Execute: docker logs wbr-streamlit-ngrok" -ForegroundColor Yellow
+}
 
 Write-Host "" -ForegroundColor Green
 Write-Host "💡 Comandos úteis:" -ForegroundColor Yellow
