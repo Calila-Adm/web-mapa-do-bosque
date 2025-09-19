@@ -15,6 +15,8 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from src.utils.env import load_environment_variables
+from src.ui.login import show_login_page
+from src.auth import logout, load_auth_token
 # from src.clients.database.bigquery import BigQueryClient  # Comentado - usando factory agora
 from src.clients.database.factory import get_database_client, get_table_config, fetch_data_generic, get_multiple_clients, get_supabase_table_config
 from src.core.wbr import gerar_grafico_wbr, calcular_metricas_wbr
@@ -40,6 +42,24 @@ db_clients = get_multiple_clients()  # All available clients
 
 # Page configuration
 st.set_page_config(page_title="WBR Dashboard", layout="wide", page_icon="📊")
+
+# Check authentication from saved token first
+if "authenticated" not in st.session_state:
+    # Try to restore session from saved token
+    auth_data = load_auth_token()
+
+    if auth_data:
+        # Restore session from saved token
+        st.session_state["authenticated"] = True
+        st.session_state["username"] = auth_data["username"]
+        st.session_state["auth_token"] = auth_data["token"]
+    else:
+        st.session_state["authenticated"] = False
+
+# Show login page if not authenticated
+if not st.session_state["authenticated"]:
+    show_login_page()
+    st.stop()  # Stop execution here if not authenticated
 
 # Get table configurations
 TABLES_CONFIG = get_table_config(db_type)  # Primary database tables
@@ -341,6 +361,16 @@ with st.sidebar:
     )
     
     st.markdown("---")
+
+    # Add logout button
+    st.markdown("### 👤 Usuário")
+    st.info(f"Logado como: **{st.session_state.get('username', 'Usuário')}**")
+
+    if st.button("🚪 Sair", use_container_width=True, type="secondary"):
+        logout()
+
+    st.markdown("---")
+
     # Mostra informação de conexão apropriada
     if db_type == "bigquery":
         st.caption(f"🔗 Conectado a: BigQuery - {os.getenv('BIGQUERY_PROJECT_ID')}.{os.getenv('BIGQUERY_DATASET')}")
