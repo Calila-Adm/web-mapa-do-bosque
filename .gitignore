@@ -44,5 +44,8 @@ logs/
 temp/
 tmp/
 
+# Database dumps
+dumps/
+
 # Old reference implementations (already integrated)
 reference/

@@ -121,6 +121,30 @@ Ao subir, acesse a URL Pública listada na interface do ngrok (porta 4040) ou no
 
 ## Usage
 
+### Sincronização de Dados TD → Supabase
+
+Para sincronizar dados do banco TD (PostgreSQL local) para o Supabase, execute:
+
+```bash
+sh scripts/sync_td_to_supabase.sh
+```
+
+O script utiliza as seguintes variáveis do arquivo `.env`:
+- **Banco TD (origem)**: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- **Supabase (destino)**: `SUPABASE_DATABASE_URL`
+
+As tabelas sincronizadas são definidas no array `TABLES` no início do arquivo `scripts/sync_td_to_supabase.sh`:
+```bash
+TABLES=(
+    "mapa_do_bosque.fluxo_de_pessoas"
+    "mapa_do_bosque.fluxo_de_veiculos"
+    "mapa_do_bosque.vendas_gshop"
+)
+```
+
+**Para adicionar ou remover tabelas**: Edite o array `TABLES` no script, adicionando ou removendo linhas conforme necessário.
+
+**Nota**: O script sempre substitui todos os dados no Supabase (não faz append).
 
 ## Testing
 
