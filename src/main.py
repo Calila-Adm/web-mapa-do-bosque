@@ -21,8 +21,7 @@ from src.core.wbr import gerar_grafico_wbr, calcular_metricas_wbr
 from src.core.wbr_metrics import calcular_kpis  # Now using unified wbr_metrics
 
 # Load environment variables
-APP_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-PROJECT_ROOT = os.path.abspath(os.path.join(APP_ROOT, '..'))
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 load_environment_variables(base_dir=PROJECT_ROOT)
 
 # Database configuration

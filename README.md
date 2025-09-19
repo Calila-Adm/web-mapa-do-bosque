@@ -5,7 +5,7 @@ This project is a Streamlit application designed to visualize data using the Wor
 ## Project Structure
 
 ```
-wbr-streamlit-bigquery
+.
 ├── src
 │   ├── app
 │   │   ├── streamlit_app.py         # Main Streamlit application (single-page)
@@ -45,10 +45,38 @@ wbr-streamlit-bigquery
 
 ## Setup Instructions
 
+### Opção 1: Usando uv (Recomendado - Mais rápido)
+
 1. **Clone the Repository**
    ```bash
    git clone <repository-url>
-   cd wbr-streamlit-bigquery
+   cd web-mapa-do-bosque
+   ```
+
+2. **Instalar uv** (se ainda não tiver)
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. **Instalar Dependências com uv**
+   ```bash
+   uv sync
+   ```
+
+4. **Set Up Environment Variables**
+   - Copy `.env.example` to `.env` and fill in the required variables.
+
+5. **Run the Streamlit Application**
+   ```bash
+   uv run streamlit run src/main.py
+   ```
+
+### Opção 2: Usando pip tradicional
+
+1. **Clone the Repository**
+   ```bash
+   git clone <repository-url>
+   cd web-mapa-do-bosque
    ```
 
 2. **Create a Virtual Environment**
@@ -67,7 +95,7 @@ wbr-streamlit-bigquery
 
 5. **Run the Streamlit Application**
    ```bash
-   streamlit run src/app/streamlit_app.py
+   streamlit run src/main.py
    ```
 
 
