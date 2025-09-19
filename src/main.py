@@ -70,7 +70,16 @@ if 'supabase' in db_clients:
     SUPABASE_CONFIG = get_supabase_table_config()
 
 # Check database configuration
-if db_type == "bigquery":
+if db_type == "supabase":
+    # Check Supabase configuration
+    if not os.getenv("SUPABASE_DATABASE_URL"):
+        st.error("❌ Configuração do Supabase não encontrada!")
+        st.info("Configure a seguinte variável de ambiente:")
+        st.code("""
+        SUPABASE_DATABASE_URL=postgresql://user:password@host:port/dbname
+        """)
+        st.stop()
+elif db_type == "bigquery":
     BQ_PROJECT = os.getenv("BIGQUERY_PROJECT_ID")
     BQ_DATASET = os.getenv("BIGQUERY_DATASET")
     if not BQ_PROJECT or not BQ_DATASET:
@@ -99,7 +108,7 @@ elif db_type in ["postgresql", "postgres"]:
         st.stop()
 else:
     st.error(f"❌ Tipo de banco de dados não reconhecido: {db_type}")
-    st.info("Configure DB_TYPE como 'bigquery' ou 'postgresql' no arquivo .env")
+    st.info("Configure DB_TYPE como 'supabase', 'bigquery' ou 'postgresql' no arquivo .env")
     st.stop()
 
 # Cache function for getting available date range
@@ -372,7 +381,9 @@ with st.sidebar:
     st.markdown("---")
 
     # Mostra informação de conexão apropriada
-    if db_type == "bigquery":
+    if db_type == "supabase":
+        st.caption(f"🔗 Conectado a: Supabase - {os.getenv('SUPABASE_SCHEMA_MAPA', 'mapa_do_bosque')}")
+    elif db_type == "bigquery":
         st.caption(f"🔗 Conectado a: BigQuery - {os.getenv('BIGQUERY_PROJECT_ID')}.{os.getenv('BIGQUERY_DATASET')}")
     else:
         db_info = os.getenv('POSTGRES_DATABASE', 'PostgreSQL')

@@ -27,7 +27,7 @@ install:
 
 # Run the Streamlit application
 run:
-	streamlit run $(SRC_DIR)/main.py
+	uv run streamlit run $(SRC_DIR)/main.py
 
 # Run the tests
 test:

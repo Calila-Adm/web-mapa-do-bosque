@@ -238,6 +238,48 @@ class SupabaseClient:
 
         return self.query(query)
 
+    def fetch_wbr_data(self, *, table_name: str, date_col: str = 'data',
+                       metric_col: str = 'value', shopping_col: Optional[str] = 'shopping') -> pd.DataFrame:
+        """
+        Busca dados WBR das tabelas principais (fluxo de pessoas, veículos, vendas).
+
+        Args:
+            table_name: Nome da tabela com schema (ex: "mapa-do-bosque.fluxo_de_pessoas")
+            date_col: Nome da coluna de data
+            metric_col: Nome da coluna de métrica
+            shopping_col: Nome da coluna de shopping (opcional)
+
+        Returns:
+            DataFrame com colunas padronizadas: date, metric_value, shopping (se houver)
+        """
+        try:
+            # Monta query básica
+            select_cols = [f"{date_col} as date", f"{metric_col} as metric_value"]
+            if shopping_col:
+                select_cols.append(f"{shopping_col} as shopping")
+
+            query = f"""
+            SELECT {', '.join(select_cols)}
+            FROM "{table_name.replace('.', '"."')}"
+            WHERE {date_col} IS NOT NULL
+            ORDER BY {date_col} DESC
+            """
+
+            # Executa query
+            with self.engine.connect() as conn:
+                df = pd.read_sql_query(text(query), conn)
+
+            # Converte coluna de data para datetime
+            if not df.empty and 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+
+            logger.info(f"Fetched {len(df)} rows from {table_name}")
+            return df
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar dados de {table_name}: {str(e)}")
+            return pd.DataFrame()
+
     def test_connection(self) -> bool:
         """Testa a conexão com o banco"""
         try:
