@@ -1,13 +1,14 @@
 # Dockerfile com Ngrok integrado
 FROM python:3.11-slim
 
-# Instalar dependências do sistema e Ngrok
+# Instalar dependências do sistema, UV e Ngrok
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
     wget \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Baixar e instalar Ngrok
 RUN wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
@@ -15,11 +16,14 @@ RUN wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz \
     && mv ngrok /usr/local/bin/ \
     && rm ngrok-v3-stable-linux-amd64.tgz
 
+# Adicionar UV ao PATH
+ENV PATH="/root/.local/bin:$PATH"
+
 WORKDIR /app
 
-# Copiar requirements e instalar dependências Python
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar arquivos do projeto e instalar dependências com UV
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen
 
 # Copiar código da aplicação
 COPY . .
@@ -32,7 +36,7 @@ if [ ! -z "$NGROK_AUTH_TOKEN" ]; then\n\
 fi\n\
 \n\
 # Iniciar Streamlit em background\n\
-streamlit run src/main.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true &\n\
+uv run streamlit run src/main.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true &\n\
 \n\
 # Aguardar Streamlit iniciar\n\
 sleep 5\n\
