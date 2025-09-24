@@ -40,7 +40,7 @@ def show_login_page():
             with col_btn1:
                 submit_button = st.form_submit_button(
                     "🚀 Entrar",
-                    use_container_width=True,
+                    width="stretch",
                     type="primary"
                 )
 

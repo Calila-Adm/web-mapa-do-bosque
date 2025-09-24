@@ -186,11 +186,11 @@ class WBRCalculator:
             self.py_trailing_six_weeks = pd.DataFrame(
                 columns=self.cy_trailing_six_weeks.columns
             )
-            for _ in range(self.num_weeks):
-                self.py_trailing_six_weeks = pd.concat([
-                    self.py_trailing_six_weeks,
-                    pd.DataFrame({col: [pd.NA] for col in self.cy_trailing_six_weeks.columns})
-                ], ignore_index=True)
+            # Create all rows at once to avoid concatenation warnings
+            empty_rows = pd.DataFrame(
+                {col: [pd.NA] * self.num_weeks for col in self.cy_trailing_six_weeks.columns}
+            )
+            self.py_trailing_six_weeks = empty_rows
         else:
             self.py_trailing_six_weeks = create_trailing_six_weeks(
                 py_daily,
@@ -444,11 +444,19 @@ class WBRCalculator:
     
     def export_trailing(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Export combined DataFrames with original and derived metrics."""
-        cy = pd.concat([self.cy_trailing_six_weeks, self.derived_cy], axis=1)
+        # Filter out empty DataFrames before concatenation
+        dfs_to_concat = [self.cy_trailing_six_weeks]
+        if not self.derived_cy.empty:
+            dfs_to_concat.append(self.derived_cy)
+        cy = pd.concat(dfs_to_concat, axis=1) if len(dfs_to_concat) > 1 else dfs_to_concat[0]
         
         py_original = self.py_trailing_six_weeks.add_prefix("PY__")
         py_derived = self.derived_py.add_prefix("PY__")
-        py = pd.concat([py_original, py_derived], axis=1)
+        # Filter out empty DataFrames before concatenation
+        py_dfs = [py_original]
+        if not py_derived.empty:
+            py_dfs.append(py_derived)
+        py = pd.concat(py_dfs, axis=1) if len(py_dfs) > 1 else py_dfs[0]
         
         logger.info(f"Exported trailing windows: CY shape={cy.shape}, PY shape={py.shape}")
         return cy, py

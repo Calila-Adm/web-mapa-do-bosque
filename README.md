@@ -1,53 +1,75 @@
-# WBR Streamlit BigQuery
+# WBR Dashboard - Mapa do Bosque
 
-This project is a Streamlit application designed to visualize data using the Working Backwards Reporting (WBR) methodology. It retrieves data from Google BigQuery and presents it through interactive charts and key performance indicators (KPIs).
+Dashboard modular para análise de métricas WBR (Working Backwards Reporting) com integração Supabase/PostgreSQL. O sistema apresenta dados através de gráficos interativos e indicadores-chave de desempenho (KPIs) para análise de fluxo de pessoas, veículos, vendas e métricas do Instagram.
 
-## Project Structure
+## Estrutura do Projeto
 
 ```
 .
-├── src
-│   ├── app
-│   │   ├── streamlit_app.py         # Main Streamlit application (single-page)
-│   │   └── pages
-│   │       └── .01_wbr.py            # Hidden page (disabled with dot prefix)
-│   ├── data
-│   │   ├── bigquery_client.py        # Handles BigQuery interactions
-│   │   ├── queries
-│   │   │   └── wbr.sql               # SQL queries for WBR data retrieval
-│   │   └── __init__.py               # Marks the data directory as a package
-│   ├── wbr
-│   │   ├── processing.py             # Data processing functions for WBR
-│   │   ├── kpis.py                   # Functions for KPI calculations
-│   │   ├── charts.py                 # Visualization functions
-│   │   └── __init__.py               # Marks the WBR directory as a package
-│   ├── utils
-│   │   ├── env.py                    # Environment variable loading
-│   │   └── logging.py                 # Logging setup for the application
-│   └── config
-│       ├── settings.py               # Configuration settings for the application
-│       └── __init__.py               # Marks the config directory as a package
-├── tests
-│   ├── test_processing.py             # Unit tests for processing functions
-│   ├── test_kpis.py                   # Unit tests for KPI calculations
-│   └── test_bigquery_client.py        # Unit tests for BigQuery client functions
-├── notebooks
-│   └── exploration.ipynb              # Jupyter notebook for exploratory data analysis
-├── .streamlit
-│   └── config.toml                    # Streamlit configuration (server, theme)
-├── .env.example                        # Template for environment variables
-├── .gitignore                         # Files and directories to ignore by Git
-├── requirements.txt                   # Python dependencies for the project
-├── pyproject.toml                     # Project dependencies and configurations
-├── Makefile                           # Automation commands for the project
-└── README.md                          # Documentation for the project
+├── src/
+│   ├── main.py                       # Aplicação principal Streamlit
+│   ├── auth.py                       # Sistema de autenticação
+│   ├── clients/
+│   │   ├── database/
+│   │   │   ├── factory.py           # Factory para criação de clientes DB
+│   │   │   ├── supabase_postgres.py # Cliente Supabase/PostgreSQL
+│   │   │   └── postgresql.py        # Cliente PostgreSQL genérico
+│   │   └── sql/
+│   │       ├── instagram_queries.py # Queries para dados do Instagram
+│   │       └── queries.sql          # Queries SQL gerais
+│   ├── config/
+│   │   ├── database.py              # Configurações de banco de dados
+│   │   └── settings.py              # Configurações gerais da aplicação
+│   ├── core/
+│   │   ├── wbr.py                   # Lógica principal WBR
+│   │   ├── wbr_metrics.py           # Cálculos de métricas WBR
+│   │   ├── wbr_utility.py           # Utilitários para WBR
+│   │   ├── processing.py            # Processamento de dados
+│   │   └── charts.py                # Geração de gráficos Plotly
+│   ├── services/
+│   │   ├── data_service.py          # Serviço de acesso a dados
+│   │   └── metrics_service.py       # Serviço de cálculo de métricas
+│   ├── ui/
+│   │   ├── login.py                 # Página de login
+│   │   ├── pages/
+│   │   │   ├── __init__.py         # Exporta páginas disponíveis
+│   │   │   ├── dashboard.py        # Página principal do dashboard
+│   │   │   └── instagram.py        # Página de métricas do Instagram
+│   │   └── components/
+│   │       ├── sidebar.py          # Componente da barra lateral
+│   │       ├── charts.py           # Componente de gráficos
+│   │       ├── metrics.py          # Componente de métricas/KPIs
+│   │       └── data_preview.py     # Componente de preview de dados
+│   └── utils/
+│       ├── env.py                   # Carregamento de variáveis ambiente
+│       └── logging.py               # Configuração de logging
+├── scripts/
+│   ├── sync_td_to_supabase.sh      # Script de sincronização TD→Supabase
+│   └── check_database.py            # Script de verificação do banco
+├── config/
+│   └── wbr_config.yaml             # Configurações WBR em YAML
+├── .secrets/
+│   └── .env                        # Variáveis de ambiente sensíveis
+├── .streamlit/
+│   └── config.toml                 # Configuração do Streamlit
+├── pyproject.toml                  # Dependências do projeto (uv/pip)
+├── uv.lock                         # Lock file do uv
+├── requirements.txt                # Dependências Python
+├── Dockerfile                      # Imagem Docker da aplicação
+├── docker-compose.yml              # Orquestração com ngrok
+└── README.md                       # Esta documentação
 ```
 
-## Setup Instructions
+## Instruções de Configuração
+
+### Pré-requisitos
+- Python 3.10 ou superior
+- Conta Supabase com banco PostgreSQL configurado
+- Credenciais de acesso ao banco de dados
 
 ### Opção 1: Usando uv (Recomendado - Mais rápido)
 
-1. **Clone the Repository**
+1. **Clone o Repositório**
    ```bash
    git clone <repository-url>
    cd web-mapa-do-bosque
@@ -63,100 +85,130 @@ This project is a Streamlit application designed to visualize data using the Wor
    uv sync
    ```
 
-4. **Set Up Environment Variables**
-   - Copy `.env.example` to `.env` and fill in the required variables.
+4. **Configurar Variáveis de Ambiente**
+   - Copie `.env.example` para `.secrets/.env`
+   - Configure as seguintes variáveis principais:
+     - `SUPABASE_DATABASE_URL`: URL de conexão do Supabase
+     - `SUPABASE_SCHEMA_MAPA`: Schema principal (default: mapa_do_bosque)
+     - `SUPABASE_METRIC_COL`: Nome da coluna de métrica (default: value)
+     - Credenciais de autenticação do dashboard
 
-5. **Run the Streamlit Application**
+5. **Executar a Aplicação**
    ```bash
    uv run streamlit run src/main.py
    ```
 
 ### Opção 2: Usando pip tradicional
 
-1. **Clone the Repository**
+1. **Clone o Repositório**
    ```bash
    git clone <repository-url>
    cd web-mapa-do-bosque
    ```
 
-2. **Create a Virtual Environment**
+2. **Criar Ambiente Virtual**
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+   source venv/bin/activate  # No Windows use `venv\Scripts\activate`
    ```
 
-3. **Install Dependencies**
+3. **Instalar Dependências**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Set Up Environment Variables**
-   - Copy `.env.example` to `.env` and fill in the required variables.
+4. **Configurar Variáveis de Ambiente**
+   - Copie `.env.example` para `.secrets/.env`
+   - Configure as variáveis conforme descrito na Opção 1
 
-5. **Run the Streamlit Application**
+5. **Executar a Aplicação**
    ```bash
    streamlit run src/main.py
    ```
 
 
-## Deploy rápido com Docker + ngrok
+## Deploy com Docker + ngrok
 
-Este projeto inclui um `Dockerfile` e `docker-compose.yml` para executar o Streamlit e expor via ngrok (sidecar).
+O projeto inclui suporte completo para Docker com exposição pública via ngrok.
 
-Passos:
+### Configuração Docker
 
-1) Crie seu arquivo `.env` a partir de `.env.example` e preencha:
-   - `BIGQUERY_PROJECT_ID`, `BIGQUERY_DATASET`
-   - `GOOGLE_APPLICATION_CREDENTIALS` com o caminho ABSOLUTO no host para o JSON da service account.
+1. **Preparar Variáveis de Ambiente**
+   ```bash
+   cp .env.example .secrets/.env
+   ```
+   Configure em `.secrets/.env`:
+   - `SUPABASE_DATABASE_URL`: URL de conexão do Supabase
+   - `NGROK_AUTHTOKEN`: Token do ngrok (para exposição pública)
 
-2) Crie `.secrets/.env` contendo seu token do ngrok:
-   - `NGROK_AUTHTOKEN=seu_token`
+2. **Build e Execução**
+   ```bash
+   docker-compose up --build
+   ```
 
-3) Suba com Docker Compose:
+3. **Acessar a Aplicação**
+   - Local: http://localhost:8501
+   - Público (ngrok): http://localhost:4040 (interface do ngrok)
+   - A URL pública será exibida na interface do ngrok
 
-   - O serviço `app` expõe a porta 8501 localmente.
-   - O serviço `ngrok` criará um túnel público e a UI estará em http://localhost:4040.
+## Uso do Sistema
 
-Ao subir, acesse a URL Pública listada na interface do ngrok (porta 4040) ou nos logs do container do ngrok.
+### Funcionalidades Principais
 
-## Usage
+1. **Dashboard Principal**
+   - Visualização de fluxo de pessoas
+   - Análise de fluxo de veículos
+   - Métricas de vendas
+   - Gráficos WBR com comparações YoY, WoW, MTD, QTD, YTD
 
-### Sincronização de Dados TD → Supabase
+2. **Métricas do Instagram**
+   - Engajamento total (likes, comentários, compartilhamentos)
+   - Alcance e impressões
+   - Análise por shopping (SCIB, SBGP, SBI)
+   - Tendências temporais
 
-Para sincronizar dados do banco TD (PostgreSQL local) para o Supabase, execute:
+3. **Filtros Disponíveis**
+   - Por período (data inicial e final)
+   - Por shopping específico
+   - Por ano de comparação
+
+### Sincronização de Dados
+
+Para sincronizar dados de um banco PostgreSQL local para o Supabase:
 
 ```bash
 sh scripts/sync_td_to_supabase.sh
 ```
 
-O script utiliza as seguintes variáveis do arquivo `.env`:
-- **Banco TD (origem)**: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-- **Supabase (destino)**: `SUPABASE_DATABASE_URL`
+**Configuração necessária em `.secrets/.env`:**
+- Origem: `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DATABASE`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+- Destino: `SUPABASE_DATABASE_URL`
 
-As tabelas sincronizadas são definidas no array `TABLES` no início do arquivo `scripts/sync_td_to_supabase.sh`:
-```bash
-TABLES=(
-    "mapa_do_bosque.fluxo_de_pessoas"
-    "mapa_do_bosque.fluxo_de_veiculos"
-    "mapa_do_bosque.vendas_gshop"
-)
-```
+**Tabelas sincronizadas** (configuráveis no script):
+- `mapa_do_bosque.fluxo_de_pessoas`
+- `mapa_do_bosque.fluxo_de_veiculos`
+- `mapa_do_bosque.vendas_gshop`
 
-**Para adicionar ou remover tabelas**: Edite o array `TABLES` no script, adicionando ou removendo linhas conforme necessário.
+## Testes
 
-**Nota**: O script sempre substitui todos os dados no Supabase (não faz append).
-
-## Testing
-
-To run the tests, use the following command:
+Para executar os testes:
 ```bash
 pytest tests/
 ```
 
-## Contributing
+## Tecnologias Utilizadas
 
-Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+- **Frontend**: Streamlit
+- **Visualização**: Plotly
+- **Banco de Dados**: Supabase/PostgreSQL
+- **Processamento**: Pandas, NumPy
+- **Autenticação**: Sistema customizado com tokens
+- **Deploy**: Docker, ngrok
 
-## License
+## Contribuições
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+Contribuições são bem-vindas! Por favor, abra uma issue ou envie um pull request para melhorias ou correções.
+
+## Licença
+
+Este projeto está licenciado sob a Licença MIT. Veja o arquivo LICENSE para detalhes.

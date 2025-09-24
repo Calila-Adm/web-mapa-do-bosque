@@ -120,7 +120,11 @@ def create_new_row(
         if date_col:
             row[date_col] = date_obj
         
-        return pd.concat([pd.DataFrame([row]), df], ignore_index=True)
+        # Create new DataFrame with the row and concatenate
+        new_row_df = pd.DataFrame([row])
+        if df.empty:
+            return new_row_df
+        return pd.concat([new_row_df, df], ignore_index=True)
         
     except Exception as e:
         logger.error(f"Error creating new row: {e}")
