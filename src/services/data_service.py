@@ -9,6 +9,12 @@ from src.clients.database.factory import get_database_client, fetch_data_generic
 from src.config.database import get_table_config, get_database_type
 
 
+@st.cache_resource
+def get_data_service():
+    """Cria DataService uma única vez com cache de recurso"""
+    return DataService()
+
+
 class DataService:
     """Serviço para gerenciamento de dados"""
 
@@ -118,24 +124,29 @@ class DataService:
             return ["SCIB", "SBGP", "SBI"]
 
     @st.cache_data(ttl=300, show_spinner=False)
-    def load_table_data(_self, table_name: str, config: Dict[str, Any]) -> Optional[pd.DataFrame]:
+    def load_table_data(_self, table_name: str, config: Dict[str, Any],
+                       date_reference: Optional[pd.Timestamp] = None,
+                       shopping_filter: Optional[str] = None) -> Optional[pd.DataFrame]:
         """
         Carrega dados do banco de dados para uma tabela específica
 
         Args:
             table_name: Nome da tabela
             config: Configuração da tabela
+            date_reference: Data de referência para filtro
+            shopping_filter: Filtro de shopping
 
         Returns:
-            DataFrame com os dados ou None em caso de erro
+            DataFrame com os dados já filtrados ou None em caso de erro
         """
         try:
-            # Usa a função de busca genérica da factory
+            # Usa a função de busca genérica da factory com filtros
             df = fetch_data_generic(
                 client=_self.db_client,
                 config=config,
                 year_filter=None,
-                shopping_filter=None
+                shopping_filter=shopping_filter,
+                date_reference=date_reference
             )
             return df
         except Exception as e:

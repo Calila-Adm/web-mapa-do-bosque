@@ -28,12 +28,15 @@ class SupabaseClient:
                 "Adicione no .env: SUPABASE_DATABASE_URL=postgresql://..."
             )
 
-        # Cria engine SQLAlchemy
+        # Cria engine SQLAlchemy com pool otimizado
         self.engine = create_engine(
             supabase_db_url,
             pool_pre_ping=True,
-            pool_size=5,
-            max_overflow=10
+            pool_size=5,              # 5 conexões permanentes
+            max_overflow=10,          # Até 10 conexões extras
+            pool_timeout=30,          # Timeout para obter conexão
+            pool_recycle=3600,        # Recicla conexões a cada hora
+            echo=False                # Desabilita logging SQL para performance
         )
 
         # Schemas dos shoppings
@@ -239,7 +242,8 @@ class SupabaseClient:
         return self.query(query)
 
     def fetch_wbr_data(self, *, table_name: str, date_col: str = 'data',
-                       metric_col: str = 'value', shopping_col: Optional[str] = 'shopping') -> pd.DataFrame:
+                       metric_col: str = 'value', shopping_col: Optional[str] = 'shopping',
+                       date_reference: Optional[str] = None) -> pd.DataFrame:
         """
         Busca dados WBR das tabelas principais (fluxo de pessoas, veículos, vendas).
 
@@ -248,6 +252,7 @@ class SupabaseClient:
             date_col: Nome da coluna de data
             metric_col: Nome da coluna de métrica
             shopping_col: Nome da coluna de shopping (opcional)
+            date_reference: Data de referência para filtro (YYYY-MM-DD)
 
         Returns:
             DataFrame com colunas padronizadas: date, metric_value, shopping (se houver)
@@ -258,10 +263,26 @@ class SupabaseClient:
             if shopping_col:
                 select_cols.append(f"{shopping_col} as shopping")
 
+            # Define o filtro de data
+            # Se date_reference fornecida, usa ela; senão usa data atual
+            if date_reference:
+                ref_date = f"'{date_reference}'::date"
+            else:
+                ref_date = "CURRENT_DATE"
+
+            # Busca dados do início do ano anterior até a data de referência
+            # Isso garante ter dados para comparação YoY
+            date_filter = f"""
+            {date_col} BETWEEN
+                DATE_TRUNC('year', {ref_date} - INTERVAL '1 year')
+                AND {ref_date}
+            """
+
             query = f"""
             SELECT {', '.join(select_cols)}
             FROM "{table_name.replace('.', '"."')}"
             WHERE {date_col} IS NOT NULL
+                AND {date_filter}
             ORDER BY {date_col} DESC
             """
 
@@ -273,7 +294,7 @@ class SupabaseClient:
             if not df.empty and 'date' in df.columns:
                 df['date'] = pd.to_datetime(df['date'])
 
-            logger.info(f"Fetched {len(df)} rows from {table_name}")
+            logger.info(f"Fetched {len(df)} rows from {table_name} (filtered by date)")
             return df
 
         except Exception as e:

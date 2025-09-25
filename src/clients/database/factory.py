@@ -147,37 +147,40 @@ def get_supabase_table_config():
     }
 
 
-def fetch_data_generic(client, config, year_filter=None, shopping_filter=None, client_type=None):
+def fetch_data_generic(client, config, year_filter=None, shopping_filter=None, client_type=None, date_reference=None):
     """
     Função para buscar dados usando cliente Supabase.
 
     Args:
         client: Cliente Supabase
         config: Dicionário com configuração da tabela
-        year_filter: Filtro opcional de ano
+        year_filter: Filtro opcional de ano (será ignorado se date_reference fornecida)
         shopping_filter: Filtro opcional de shopping
         client_type: Ignorado - sempre usa Supabase
+        date_reference: Data de referência para filtro (YYYY-MM-DD ou pd.Timestamp)
 
     Returns:
-        DataFrame com os dados
+        DataFrame com os dados já filtrados
     """
     # Sempre usar Supabase - precisa incluir o schema
     table_with_schema = config['table']
     if config.get('schema'):
         table_with_schema = f"{config['schema']}.{config['table']}"
 
+    # Converte date_reference para string se necessário
+    if date_reference and hasattr(date_reference, 'strftime'):
+        date_reference = date_reference.strftime('%Y-%m-%d')
+
     df = client.fetch_wbr_data(
         table_name=table_with_schema,
         date_col=config['date_col'],
         metric_col=config['metric_col'],
-        shopping_col=config.get('shopping_col')
+        shopping_col=config.get('shopping_col'),
+        date_reference=date_reference
     )
 
-    # Aplicar filtros se necessário
-    if year_filter and 'date' in df.columns:
-        df = df[df['date'].dt.year == year_filter]
-
+    # Aplicar filtro de shopping apenas (data já foi filtrada na query)
     if shopping_filter and 'shopping' in df.columns:
-        df = df[df['shopping'].str.contains(shopping_filter, case=False, na=False)]
+        df = df[df['shopping'] == shopping_filter]
 
     return df

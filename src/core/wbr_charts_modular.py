@@ -101,7 +101,7 @@ def criar_grafico_semanal_wbr(
         x=x_semanas,
         y=valores_py,
         name=f'{unidade.upper()} {ano_anterior} (Semanas)',
-        line=dict(color="#D685AB", width=1.5, shape='spline', smoothing=1.0),
+        line=dict(color="#D685AB", width=1.5, shape='linear'),  # Mudado de 'spline' para 'linear'
         mode='lines',
         connectgaps=False,
         hovertemplate='%{y:,.0f}<extra></extra>',
@@ -312,7 +312,7 @@ def criar_grafico_mensal_wbr(
                     x=x_validos,
                     y=y_validos,
                     name=f'{unidade.upper()} {ano_anterior} (Meses)',
-                    line=dict(color="#D685AB", width=1.5, shape='spline', smoothing=1.0),
+                    line=dict(color="#D685AB", width=1.5, shape='linear'),  # Mudado para linear
                     mode='lines',
                     connectgaps=False,
                     hovertemplate='%{y:,.0f}<extra></extra>',
@@ -351,7 +351,7 @@ def criar_grafico_mensal_wbr(
                 x=x_validos,
                 y=y_validos,
                 name=f'{unidade.upper()} {ano_anterior} (Meses)',
-                line=dict(color="#D685AB", width=1.5, shape='spline', smoothing=1.0),
+                line=dict(color="#D685AB", width=1.5, shape='linear'),  # Mudado para linear
                 mode='lines',
                 connectgaps=False,
                 hovertemplate='%{y:,.0f}<extra></extra>',

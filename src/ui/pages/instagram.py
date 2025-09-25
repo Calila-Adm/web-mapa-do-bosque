@@ -14,10 +14,39 @@ class InstagramPage:
     """Página de métricas do Instagram"""
 
     def __init__(self):
-        self.instagram_service = InstagramService()
-        self.chart_component = ChartComponent()
-        self.metrics_component = MetricsComponent()
-        self.data_preview = DataPreviewComponent()
+        # Lazy initialization - componentes criados sob demanda
+        self._instagram_service = None
+        self._chart_component = None
+        self._metrics_component = None
+        self._data_preview = None
+
+    @property
+    def instagram_service(self):
+        """Lazy loading do instagram service"""
+        if self._instagram_service is None:
+            self._instagram_service = InstagramService()
+        return self._instagram_service
+
+    @property
+    def chart_component(self):
+        """Lazy loading do chart component"""
+        if self._chart_component is None:
+            self._chart_component = ChartComponent()
+        return self._chart_component
+
+    @property
+    def metrics_component(self):
+        """Lazy loading do metrics component"""
+        if self._metrics_component is None:
+            self._metrics_component = MetricsComponent()
+        return self._metrics_component
+
+    @property
+    def data_preview(self):
+        """Lazy loading do data preview component"""
+        if self._data_preview is None:
+            self._data_preview = DataPreviewComponent()
+        return self._data_preview
 
     def render(self, filters: Dict[str, Any]):
         """

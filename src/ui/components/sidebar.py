@@ -15,8 +15,17 @@ class SidebarComponent:
     """Componente para renderização da sidebar com filtros"""
 
     def __init__(self):
-        self.data_service = DataService()
+        # Lazy initialization
+        self._data_service = None
         self.db_type = get_database_type()
+
+    @property
+    def data_service(self):
+        """Lazy loading do data service"""
+        if self._data_service is None:
+            from src.services.data_service import get_data_service
+            self._data_service = get_data_service()
+        return self._data_service
 
     def render(self) -> Dict[str, Any]:
         """

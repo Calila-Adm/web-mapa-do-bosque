@@ -4,6 +4,11 @@ port = 8501
 enableCORS = false
 enableXsrfProtection = false
 
+[browser]
+serverAddress = "localhost"
+gatherUsageStats = false
+serverPort = 8501
+
 [theme]
 primaryColor = "#383C43"
 backgroundColor = "#FFFFFF"

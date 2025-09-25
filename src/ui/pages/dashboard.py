@@ -15,11 +15,41 @@ class DashboardPage:
     """Página principal do dashboard"""
 
     def __init__(self):
-        self.data_service = DataService()
-        self.filter_service = FilterService()
-        self.chart_component = ChartComponent()
-        self.metrics_component = MetricsComponent()
+        # Lazy initialization - componentes criados sob demanda
+        self._data_service = None
+        self._filter_service = None
+        self._chart_component = None
+        self._metrics_component = None
         self.tables_config = get_table_config()
+
+    @property
+    def data_service(self):
+        """Lazy loading do data service"""
+        if self._data_service is None:
+            from src.services.data_service import get_data_service
+            self._data_service = get_data_service()
+        return self._data_service
+
+    @property
+    def filter_service(self):
+        """Lazy loading do filter service"""
+        if self._filter_service is None:
+            self._filter_service = FilterService()
+        return self._filter_service
+
+    @property
+    def chart_component(self):
+        """Lazy loading do chart component"""
+        if self._chart_component is None:
+            self._chart_component = ChartComponent()
+        return self._chart_component
+
+    @property
+    def metrics_component(self):
+        """Lazy loading do metrics component"""
+        if self._metrics_component is None:
+            self._metrics_component = MetricsComponent()
+        return self._metrics_component
 
     def render(self, filters: Dict[str, Any]):
         """
@@ -59,22 +89,18 @@ class DashboardPage:
         data = {}
 
         with st.spinner("Carregando dados..."):
-            # Carrega dados de cada tabela
+            # Carrega dados de cada tabela já filtrados na query
             for table_name, config in self.tables_config.items():
-                # Carrega dados brutos
-                df = self.data_service.load_table_data(table_name, config)
+                # Carrega dados já filtrados pela query SQL
+                df = self.data_service.load_table_data(
+                    table_name,
+                    config,
+                    date_reference=filters.get('data_referencia'),
+                    shopping_filter=filters.get('shopping')
+                )
 
-                if df is not None:
-                    # Aplica filtros
-                    df_filtered = self.filter_service.apply_filters(
-                        df,
-                        date_start=filters.get('data_inicio'),
-                        date_end=filters.get('data_fim'),
-                        shopping_filter=filters.get('shopping')
-                    )
-                    data[table_name] = df_filtered
-                else:
-                    data[table_name] = None
+                # Não precisa mais filtrar em Python, dados já vêm filtrados
+                data[table_name] = df
 
         return data
 
