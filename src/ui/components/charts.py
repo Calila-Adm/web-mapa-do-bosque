@@ -14,7 +14,8 @@ class ChartComponent:
         self,
         config: Dict[str, Any],
         df: pd.DataFrame,
-        data_referencia: pd.Timestamp
+        data_referencia: pd.Timestamp,
+        metodo_semana: str = 'iso'
     ):
         """
         Renderiza gráfico WBR para uma configuração específica
@@ -23,6 +24,7 @@ class ChartComponent:
             config: Configuração da tabela/gráfico
             df: DataFrame com os dados
             data_referencia: Data de referência para o gráfico
+            metodo_semana: 'iso' ou 'travelling' para tipo de cálculo semanal
         """
         if df is None or df.empty:
             st.warning(f"Sem dados disponíveis para {config['titulo']}")
@@ -36,7 +38,8 @@ class ChartComponent:
                 coluna_pessoas='metric_value',
                 titulo=f"{config['icon']} {config['titulo']}",
                 unidade=config['unidade'],
-                data_referencia=data_referencia
+                data_referencia=data_referencia,
+                metodo_semana=metodo_semana
             )
 
             # Exibe gráfico
@@ -114,7 +117,8 @@ class ChartComponent:
         title: str,
         y_label: str,
         data_referencia: pd.Timestamp,
-        shopping_filter: str = None
+        shopping_filter: str = None,
+        metodo_semana: str = 'iso'
     ):
         """
         Renderiza gráfico padronizado para métricas do Instagram
@@ -126,6 +130,7 @@ class ChartComponent:
             y_label: Label do eixo Y
             data_referencia: Data de referência
             shopping_filter: Filtro de shopping aplicado
+            metodo_semana: 'iso' ou 'travelling' para tipo de cálculo semanal
         """
         if df.empty:
             st.warning(f"Sem dados disponíveis para {title}")
@@ -150,4 +155,4 @@ class ChartComponent:
         }
 
         # Chama render_chart para manter padrão visual
-        self.render_chart(config, df_chart, data_referencia)
+        self.render_chart(config, df_chart, data_referencia, metodo_semana)

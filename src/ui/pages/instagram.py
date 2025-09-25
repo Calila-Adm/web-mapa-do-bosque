@@ -58,8 +58,8 @@ class InstagramPage:
 
         # Cria abas para diferentes métricas
         tabs = st.tabs([
-            "📈 Alcance",
             "👁️ Impressões",
+            "📈 Alcance",
             "📊 Engajamento Total",
             "❤️ Likes",
             "💬 Comentários",
@@ -69,21 +69,21 @@ class InstagramPage:
         ])
 
         # Renderiza cada aba
-        with tabs[0]:  # Alcance
-            self._render_metric_tab(
-                df_engagement,
-                'total_alcance',
-                'Alcance',
-                'Pessoas Alcançadas',
-                filters
-            )
-
-        with tabs[1]:  # Impressões
+        with tabs[0]:  # Impressões
             self._render_metric_tab(
                 df_engagement,
                 'total_impressoes',
                 'Impressões',
                 'Quantidade de Impressões',
+                filters
+            )
+
+        with tabs[1]:  # Alcance
+            self._render_metric_tab(
+                df_engagement,
+                'total_alcance',
+                'Alcance',
+                'Pessoas Alcançadas',
                 filters
             )
 
@@ -158,7 +158,8 @@ class InstagramPage:
             f'Total de {metric_name} por Dia',
             y_label,
             filters.get('data_referencia'),
-            filters.get('shopping')
+            filters.get('shopping'),
+            filters.get('metodo_semana', 'iso')
         )
 
         # Renderiza métricas
@@ -186,7 +187,8 @@ class InstagramPage:
             'Engajamento Total por Dia',
             'Total de Interações',
             filters.get('data_referencia'),
-            filters.get('shopping')
+            filters.get('shopping'),
+            filters.get('metodo_semana', 'iso')
         )
 
         # Métricas resumidas
@@ -230,7 +232,8 @@ class InstagramPage:
             'Quantidade de Posts Publicados',
             'Número de Posts',
             filters.get('data_referencia'),
-            filters.get('shopping')
+            filters.get('shopping'),
+            filters.get('metodo_semana', 'iso')
         )
 
         # Métricas

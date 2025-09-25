@@ -37,25 +37,265 @@ COLUNA_DATA = 'date'
 COLUNA_METRICA = 'metric_value'
 
 
-def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None = None, coluna_data: str = 'date', coluna_metrica: str = 'metric_value'):
+# ============================================
+# FUNÇÕES MODULARES PARA PROCESSAMENTO DE SEMANAS
+# ============================================
+
+def calcular_semanas_travelling(
+    data_referencia: pd.Timestamp,
+    num_semanas: int = 6
+) -> List[Dict[str, pd.Timestamp]]:
     """
-    Processa dados no formato WBR brasileiro: 6 semanas + ano fiscal (Jan-Dez),
-    com alinhamento de semanas ISO e detecção de mês parcial.
+    Calcula períodos de semanas móveis (Travelling Week).
+
+    Args:
+        data_referencia: Data âncora (week ending)
+        num_semanas: Número de semanas a calcular
+
+    Returns:
+        Lista de dicionários com início e fim de cada semana
+    """
+    semanas = []
+    for i in range(num_semanas):
+        week_ending = data_referencia - timedelta(days=7 * i)
+        week_starting = week_ending - timedelta(days=6)
+        semanas.append({
+            'inicio': week_starting,
+            'fim': week_ending,
+            'index': num_semanas - i - 1
+        })
+    return sorted(semanas, key=lambda x: x['index'])
+
+
+def processar_semanas_travelling(
+    df_work: pd.DataFrame,
+    data_referencia: pd.Timestamp,
+    coluna_metrica: str,
+    num_semanas: int = 6
+) -> tuple:
+    """
+    Processa semanas usando método Travelling Week.
+
+    Args:
+        df_work: DataFrame indexado por data
+        data_referencia: Data de referência
+        coluna_metrica: Nome da coluna de métrica
+        num_semanas: Número de semanas
+
+    Returns:
+        Tupla (semanas_cy, semanas_py, ano_atual, ano_anterior)
+    """
+    ano_atual = data_referencia.year
+    ano_anterior = ano_atual - 1
+
+    semanas_cy_list = []
+    semanas_py_list = []
+
+    # Calcula cada semana retroativamente
+    for i in range(num_semanas):
+        # Week ending para esta semana
+        week_ending = data_referencia - timedelta(days=7 * i)
+        week_starting = week_ending - timedelta(days=6)
+
+        # CY - Ano Atual
+        mask_cy = (df_work.index >= week_starting) & (df_work.index <= week_ending)
+        valor_cy = df_work.loc[mask_cy, coluna_metrica].sum() if mask_cy.any() else 0
+        semanas_cy_list.append(pd.Series({coluna_metrica: valor_cy}, name=week_ending))
+
+        # PY - Ano Anterior
+        try:
+            week_ending_py = week_ending.replace(year=ano_anterior)
+            week_starting_py = week_starting.replace(year=ano_anterior)
+        except ValueError:
+            # Caso especial: 29 de fevereiro
+            week_ending_py = pd.Timestamp(year=ano_anterior, month=week_ending.month, day=28)
+            week_starting_py = pd.Timestamp(year=ano_anterior, month=week_starting.month,
+                                           day=min(week_starting.day, 28))
+
+        mask_py = (df_work.index >= week_starting_py) & (df_work.index <= week_ending_py)
+        valor_py = df_work.loc[mask_py, coluna_metrica].sum() if mask_py.any() else 0
+        semanas_py_list.append(pd.Series({coluna_metrica: valor_py}, name=week_ending_py))
+
+    # Criar DataFrames (ordem: mais antiga → mais recente)
+    semanas_cy = pd.DataFrame(semanas_cy_list[::-1])
+    semanas_cy.index = pd.DatetimeIndex([s.name for s in semanas_cy_list[::-1]])
+
+    semanas_py = pd.DataFrame(semanas_py_list[::-1])
+    semanas_py.index = pd.DatetimeIndex([s.name for s in semanas_py_list[::-1]])
+
+    return semanas_cy, semanas_py, ano_atual, ano_anterior
+
+
+def processar_semanas_iso(
+    df_work: pd.DataFrame,
+    data_referencia: pd.Timestamp,
+    coluna_metrica: str
+) -> tuple:
+    """
+    Processa semanas usando método ISO Week (Dom-Sáb).
+
+    Args:
+        df_work: DataFrame indexado por data
+        data_referencia: Data de referência
+        coluna_metrica: Nome da coluna de métrica
+
+    Returns:
+        Tupla (semanas_cy, semanas_py, semana_parcial, dados_adicionais)
+    """
+    ano_atual = data_referencia.year
+    ano_anterior = ano_atual - 1
+
+    # Verifica se estamos no meio de uma semana (semana parcial)
+    fim_semana_completa = pd.Timestamp(data_referencia).to_period('W-SUN').end_time
+    semana_parcial = data_referencia < fim_semana_completa
+
+    if semana_parcial:
+        fim_semana = data_referencia
+        inicio_semana_atual = pd.Timestamp(data_referencia).to_period('W-SUN').start_time
+        dias_semana_parcial = (data_referencia - inicio_semana_atual).days + 1
+    else:
+        fim_semana = fim_semana_completa
+        dias_semana_parcial = 7
+        inicio_semana_atual = fim_semana - timedelta(days=6)
+
+    # Semanas CY
+    inicio_6sem = fim_semana - timedelta(weeks=6)
+    df_6sem_cy = df_work[(df_work.index > inicio_6sem) & (df_work.index <= fim_semana)]
+    semanas_cy = df_6sem_cy.resample('W-SUN').agg({coluna_metrica: 'sum'}).tail(6)
+
+    # Calcula data equivalente no ano anterior
+    try:
+        data_ref_py = data_referencia.replace(year=ano_anterior)
+    except ValueError:
+        data_ref_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=28)
+
+    # Processa semanas PY manualmente para garantir alinhamento
+    semanas_py_list = []
+
+    for i in range(6):
+        semanas_atras = 5 - i
+
+        if i == 5 and semana_parcial:
+            inicio_sem_cy = inicio_semana_atual
+            fim_sem_cy = data_referencia
+        else:
+            fim_sem_cy = fim_semana - timedelta(weeks=semanas_atras)
+            inicio_sem_cy = fim_sem_cy - timedelta(days=6)
+
+        try:
+            inicio_sem_py = inicio_sem_cy.replace(year=ano_anterior)
+            fim_sem_py = fim_sem_cy.replace(year=ano_anterior)
+        except ValueError:
+            inicio_sem_py = pd.Timestamp(year=ano_anterior, month=inicio_sem_cy.month,
+                                       day=min(inicio_sem_cy.day, 28))
+            fim_sem_py = pd.Timestamp(year=ano_anterior, month=fim_sem_cy.month,
+                                     day=min(fim_sem_cy.day, 28))
+
+        df_semana_py = df_work[(df_work.index >= inicio_sem_py) & (df_work.index <= fim_sem_py)]
+        valor_semana = df_semana_py[coluna_metrica].sum() if not df_semana_py.empty else 0
+        semanas_py_list.append(pd.Series({coluna_metrica: valor_semana}, name=fim_sem_py))
+
+    semanas_py = pd.DataFrame(semanas_py_list)
+    semanas_py.index = pd.DatetimeIndex([s.name for s in semanas_py_list])
+
+    dados_adicionais = {
+        'inicio_semana_atual': inicio_semana_atual if semana_parcial else None,
+        'dias_semana_parcial': dias_semana_parcial
+    }
+
+    return semanas_cy, semanas_py, semana_parcial, dados_adicionais
+
+
+def processar_meses_completo(
+    df_work: pd.DataFrame,
+    data_referencia: pd.Timestamp,
+    coluna_metrica: str
+) -> tuple:
+    """
+    Processa dados mensais para ambos os anos.
+
+    Args:
+        df_work: DataFrame indexado por data
+        data_referencia: Data de referência
+        coluna_metrica: Nome da coluna de métrica
+
+    Returns:
+        Tupla (meses_cy, meses_py, mes_parcial_cy, mes_parcial_py)
+    """
+    ano_atual = data_referencia.year
+    ano_anterior = ano_atual - 1
+
+    # CY - Meses do ano atual
+    inicio_ano_cy = pd.Timestamp(year=ano_atual, month=1, day=1)
+    fim_ano_cy = data_referencia
+
+    df_ano_cy = df_work[(df_work.index >= inicio_ano_cy) & (df_work.index <= fim_ano_cy)]
+    df_12m_cy = df_ano_cy.resample('MS').agg({coluna_metrica: 'sum'})
+
+    # Reindexa para 12 meses
+    idx_cy = pd.date_range(start=pd.Timestamp(year=ano_atual, month=1, day=1), periods=12, freq='MS')
+    df_12m_cy = df_12m_cy.reindex(idx_cy)
+
+    # Zera meses passados sem dados, mantém NaN para meses futuros
+    mes_ref = data_referencia.month
+    futuros_mask = df_12m_cy.index.month > mes_ref
+    df_12m_cy.loc[~futuros_mask, coluna_metrica] = df_12m_cy.loc[~futuros_mask, coluna_metrica].fillna(0)
+
+    # Detectar mês parcial CY
+    fim_mes_ref = (data_referencia.replace(day=1) + pd.offsets.MonthEnd(1))
+    mes_parcial_cy = data_referencia < fim_mes_ref
+
+    # PY - Meses do ano anterior
+    inicio_ano_py = pd.Timestamp(year=ano_anterior, month=1, day=1)
+    try:
+        fim_ano_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=data_referencia.day)
+    except ValueError:
+        fim_ano_py = pd.Timestamp(year=ano_anterior, month=data_referencia.month, day=28)
+
+    df_ano_py = df_work[(df_work.index >= inicio_ano_py) & (df_work.index <= fim_ano_py)]
+
+    # Processa mês a mês para PY
+    meses_py_list = []
+    for mes in range(1, 13):
+        inicio_mes_py = pd.Timestamp(year=ano_anterior, month=mes, day=1)
+
+        if mes == data_referencia.month:
+            fim_mes_py = pd.Timestamp(year=ano_anterior, month=mes, day=data_referencia.day)
+        elif mes < data_referencia.month:
+            fim_mes_py = inicio_mes_py + pd.offsets.MonthEnd(0)
+        else:
+            meses_py_list.append(pd.Series({coluna_metrica: np.nan}, name=inicio_mes_py))
+            continue
+
+        dados_mes = df_ano_py[(df_ano_py.index >= inicio_mes_py) & (df_ano_py.index <= fim_mes_py)]
+        soma_mes = dados_mes[coluna_metrica].sum() if not dados_mes.empty else 0
+        meses_py_list.append(pd.Series({coluna_metrica: soma_mes}, name=inicio_mes_py))
+
+    df_12m_py = pd.DataFrame(meses_py_list)
+    df_12m_py.index = pd.DatetimeIndex([s.name for s in meses_py_list])
+
+    mes_parcial_py = mes_parcial_cy
+
+    return df_12m_cy, df_12m_py, mes_parcial_cy, mes_parcial_py
+
+
+def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None = None, coluna_data: str = 'date', coluna_metrica: str = 'metric_value', metodo_semana: str = 'iso'):
+    """
+    Processa dados no formato WBR brasileiro: 6 semanas + ano fiscal (Jan-Dez).
 
     Args:
         df: DataFrame com colunas de data e métrica
         data_referencia: Data final para análise (default: última data disponível)
         coluna_data: Nome da coluna de data (default: 'date')
         coluna_metrica: Nome da coluna de métrica (default: 'metric_value')
+        metodo_semana: 'iso' para ISO Week (Dom-Sáb) ou 'travelling' para Travelling Week (7 dias móveis)
     Returns:
         dict com séries semanais/mensais de CY e PY, flags de mês parcial e anos usados.
     """
-    # Always work with a copy to avoid modifying the original
+    # Preparação inicial comum para ambos os métodos
     df_work = df.copy()
-    
-    # Ensure the date column is datetime before any operations
     df_work[coluna_data] = pd.to_datetime(df_work[coluna_data])
-    
+
     if data_referencia is None:
         data_referencia = df_work[coluna_data].max()
     else:
@@ -63,8 +303,64 @@ def processar_dados_wbr(df: pd.DataFrame, data_referencia: pd.Timestamp | None =
 
     # Set the date column as index
     df_work = df_work.set_index(coluna_data)
-    
+
     # Ensure index is DatetimeIndex
+    if not isinstance(df_work.index, pd.DatetimeIndex):
+        df_work.index = pd.to_datetime(df_work.index)
+
+    # Processar semanas baseado no método escolhido
+    if metodo_semana == 'travelling':
+        # Usar Travelling Week (semanas móveis de 7 dias)
+        semanas_cy, semanas_py, ano_atual, ano_anterior = processar_semanas_travelling(
+            df_work, data_referencia, coluna_metrica
+        )
+        semana_parcial = False  # Travelling week sempre tem 7 dias completos
+    else:
+        # Usar ISO Week (Dom-Sáb)
+        semanas_cy, semanas_py, semana_parcial, dados_adicionais = processar_semanas_iso(
+            df_work, data_referencia, coluna_metrica
+        )
+        ano_atual = data_referencia.year
+        ano_anterior = ano_atual - 1
+
+    # Processar meses (comum para ambos os métodos)
+    df_12m_cy, df_12m_py, mes_parcial_cy, mes_parcial_py = processar_meses_completo(
+        df_work, data_referencia, coluna_metrica
+    )
+
+    # Retornar dicionário com todos os dados processados
+    return {
+        'semanas_cy': semanas_cy,
+        'semanas_py': semanas_py,
+        'meses_cy': df_12m_cy,
+        'meses_py': df_12m_py,
+        'semana_parcial': semana_parcial,
+        'mes_parcial_cy': mes_parcial_cy,
+        'mes_parcial_py': mes_parcial_py,
+        'ano_atual': ano_atual,
+        'ano_anterior': ano_anterior
+    }
+
+
+# ============================================
+# MANTÉM IMPLEMENTAÇÃO ANTIGA ABAIXO PARA REFERÊNCIA
+# (Será removida após validação completa)
+# ============================================
+
+def processar_dados_wbr_OLD(df: pd.DataFrame, data_referencia: pd.Timestamp | None = None, coluna_data: str = 'date', coluna_metrica: str = 'metric_value'):
+    """
+    VERSÃO ANTIGA - Será removida após validação.
+    Mantida temporariamente para referência.
+    """
+    df_work = df.copy()
+    df_work[coluna_data] = pd.to_datetime(df_work[coluna_data])
+
+    if data_referencia is None:
+        data_referencia = df_work[coluna_data].max()
+    else:
+        data_referencia = pd.to_datetime(data_referencia)
+
+    df_work = df_work.set_index(coluna_data)
     if not isinstance(df_work.index, pd.DatetimeIndex):
         df_work.index = pd.to_datetime(df_work.index)
 

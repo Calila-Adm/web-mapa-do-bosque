@@ -19,6 +19,7 @@ from src.ui.login import show_login_page
 from src.auth import load_auth_token
 from src.ui.components.sidebar import SidebarComponent
 from src.ui.pages import DashboardPage, InstagramPage
+from src.ui.styles.user_menu import get_user_button_css, get_logout_button_css
 
 # Configuração inicial
 load_environment_variables(base_dir=PROJECT_ROOT)
@@ -52,6 +53,32 @@ pages = {
     'dashboard': DashboardPage(),
     'instagram': InstagramPage()
 }
+
+
+# Aplicar estilos do botão do usuário
+st.markdown(get_user_button_css(), unsafe_allow_html=True)
+
+# Estado do popup do usuário
+if 'show_user_popup' not in st.session_state:
+    st.session_state.show_user_popup = False
+
+# Botão do usuário
+user_col1, user_col2, user_col3 = st.columns([1, 10, 1])
+with user_col1:
+    if st.button("👤", key="user_button", help="Menu do usuário"):
+        st.session_state.show_user_popup = not st.session_state.show_user_popup
+
+
+# Popup do usuário - com botão integrado
+if st.session_state.show_user_popup:
+    # Botão funcional de sair
+    if st.button("🚪 Sair", key="logout_popup", help="Sair do sistema"):
+        from src.auth import logout
+        logout()
+
+    # Aplicar CSS para posicionar o botão de logout
+    st.markdown(get_logout_button_css(), unsafe_allow_html=True)
+
 
 # Renderiza sidebar e obtém filtros
 filters = sidebar.render()

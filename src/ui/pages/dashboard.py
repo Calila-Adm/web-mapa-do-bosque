@@ -31,9 +31,6 @@ class DashboardPage:
         st.title("📊 Dashboard WBR - Análise de Fluxo")
         st.markdown("---")
 
-        # Mostra filtros ativos
-        if filters.get('shopping'):
-            st.info(f"🏪 **Filtro ativo:** Shopping {filters['shopping']}")
 
         # Carrega e processa dados
         data = self._load_and_process_data(filters)
@@ -42,11 +39,8 @@ class DashboardPage:
             st.error("Erro ao carregar dados. Verifique a conexão com o banco de dados.")
             return
 
-        # Renderiza baseado no layout selecionado
-        if filters.get('layout') == "Abas":
-            self._render_tabs_layout(data, filters)
-        else:
-            self._render_vertical_layout(data, filters)
+        # Renderiza sempre layout vertical (um abaixo do outro)
+        self._render_vertical_layout(data, filters)
 
         # Rodapé
         st.markdown("---")
@@ -100,7 +94,8 @@ class DashboardPage:
                 self.chart_component.render_chart(
                     config,
                     df,
-                    filters.get('data_referencia')
+                    filters.get('data_referencia'),
+                    filters.get('metodo_semana', 'iso')
                 )
             else:
                 st.warning(f"Nenhum dado de {config['titulo'].lower()} encontrado")
@@ -108,29 +103,3 @@ class DashboardPage:
             if table_name != 'vendas':  # Não adiciona separador após o último
                 st.markdown("---")
 
-    def _render_tabs_layout(self, data: Dict[str, pd.DataFrame], filters: Dict[str, Any]):
-        """
-        Renderiza layout em abas
-
-        Args:
-            data: Dados processados
-            filters: Filtros aplicados
-        """
-        # Cria abas
-        tabs = st.tabs([
-            f"{config['icon']} {config['titulo']}"
-            for config in self.tables_config.values()
-        ])
-
-        # Renderiza conteúdo de cada aba
-        for idx, (table_name, config) in enumerate(self.tables_config.items()):
-            with tabs[idx]:
-                df = data.get(table_name)
-                if df is not None and not df.empty:
-                    self.chart_component.render_chart(
-                        config,
-                        df,
-                        filters.get('data_referencia')
-                    )
-                else:
-                    st.warning(f"Nenhum dado de {config['titulo'].lower()} encontrado")

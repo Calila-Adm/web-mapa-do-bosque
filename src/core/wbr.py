@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 import datetime
 
 from .processing import processar_dados_wbr
-from .charts import criar_grafico_wbr
+from .wbr_charts_modular import criar_grafico_wbr_modular
 from .wbr_metrics import WBRCalculator
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,8 @@ def gerar_grafico_wbr(df: pd.DataFrame,
                       coluna_pessoas: str = 'metric_value',
                       titulo: str | None = None,
                       unidade: str | None = None,
-                      data_referencia: str | pd.Timestamp | None = None):
+                      data_referencia: str | pd.Timestamp | None = None,
+                      metodo_semana: str = 'iso'):
     if titulo is None:
         titulo = TITULO_GRAFICO
     if unidade is None:
@@ -39,10 +40,16 @@ def gerar_grafico_wbr(df: pd.DataFrame,
         data_referencia = pd.to_datetime(data_referencia)
 
     # Pass column names to processar_dados_wbr
-    dados_processados = processar_dados_wbr(df_original, data_referencia, coluna_data=coluna_data, coluna_metrica=coluna_pessoas)
+    dados_processados = processar_dados_wbr(df_original, data_referencia, coluna_data=coluna_data, coluna_metrica=coluna_pessoas, metodo_semana=metodo_semana)
 
-    # Pass the original df with its column names
-    fig = criar_grafico_wbr(dados_processados, df_original, data_referencia, titulo=titulo, unidade=unidade)
+    # Use the new modular function
+    fig = criar_grafico_wbr_modular(
+        dados=dados_processados,
+        titulo=titulo,
+        unidade=unidade,
+        metrica='metric_value',  # The processed data uses 'metric_value' as the standard column
+        data_referencia=data_referencia
+    )
     return fig
 
 

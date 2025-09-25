@@ -25,8 +25,135 @@ class SidebarComponent:
         Returns:
             Dicionário com filtros selecionados
         """
+        # CSS para personalizar a cor da sidebar
+        st.markdown("""
+        <style>
+        .stSidebar > div:first-child {
+            background-color: #383C43 !important;
+        }
+        .stSidebar {
+            background-color: #383C43 !important;
+        }
+        .stSidebar > div {
+            background-color: #383C43 !important;
+        }
+        /* Força a cor mesmo durante redimensionamento */
+        .stSidebar * {
+            background-color: inherit !important;
+        }
+        .stSidebar .element-container {
+            background-color: transparent !important;
+        }
+        /* Cor geral dos textos da sidebar */
+        .stSidebar .stMarkdown {
+            color: #FAFAFA !important;
+        }
+        /* Labels dos elementos de filtro */
+        .stSidebar .stSelectbox label {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stRadio label {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stDateInput label {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stTextInput label {
+            color: #FAFAFA !important;
+        }
+        /* Estilo personalizado para o título principal "Mapa do Bosque" */
+        .sidebar-title {
+            font-size: 33.5px !important;
+            font-weight: bold !important;
+            text-align: center !important;
+            color: #FAFAFA !important;
+            margin-top: -40px !important;
+            margin-bottom: 30px !important;
+            padding: 10px 0 !important;
+        }
+        /* Estilos para títulos das seções "Data" e "Shopping" */
+        .section-title {
+            font-size: 22px !important;
+            font-weight: bold !important;
+            color: #FAFAFA !important;
+            margin: 15px 0 7px 0 !important;
+            padding: 5px 0 !important;
+        }
+        /* Forçar cor dos headers nativos do Streamlit */
+        .stSidebar h1, .stSidebar h2, .stSidebar h3 {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stMarkdown h1, .stSidebar .stMarkdown h2, .stSidebar .stMarkdown h3 {
+            color: #FAFAFA !important;
+        }
+        /* Cor do texto dos elementos de input e seleção */
+        .stSidebar .stSelectbox > div > div {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stDateInput > div > div {
+            color: #FAFAFA !important;
+        }
+        .stSidebar .stTextInput > div > div {
+            color: #FAFAFA !important;
+        }
+        /* Estilo específico para o campo interno de data */
+        .stSidebar .stDateInput input {
+            color: #FAFAFA !important;
+            background-color: #383C43 !important;
+            border: 1px solid #383C43 !important;
+        }
+        .stSidebar .stDateInput input:focus {
+            border-color: #383C43 !important;
+            outline: none !important;
+            background-color: #383C43 !important;
+        }
+        .stSidebar .stDateInput input[type="text"] {
+            color: #FAFAFA !important;
+        }
+        .stSidebar input[type="date"] {
+            color: #FAFAFA !important;
+        }
+        /* Forçar cor em todos os inputs da sidebar */
+        .stSidebar input {
+            color: #FAFAFA !important;
+        }
+        /* Estilo para o ícone de calendário */
+        .stSidebar .stDateInput button {
+            color: #FAFAFA !important;
+            background-color: #2C3037 !important;
+        }
+        /* Forçar cor do texto no date picker */
+        .stSidebar [data-baseweb="input"] {
+            color: #FAFAFA !important;
+        }
+        .stSidebar [data-baseweb="input"] input {
+            color: #FAFAFA !important;
+        }
+        /* Dar mais espaço entre títulos e campos */
+        .stSidebar .stDateInput {
+            margin-top: 5px !important;
+        }
+        .stSidebar .stSelectbox {
+            margin-top: 5px !important;
+        }
+        .stSidebar .stTextInput {
+            margin-top: 5px !important;
+        }
+        /* Esconder labels dos campos */
+        .stSidebar .stDateInput label {
+            display: none !important;
+        }
+        .stSidebar .stSelectbox label {
+            display: none !important;
+        }
+        .stSidebar .stTextInput label {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
         with st.sidebar:
-            st.header("🎯 Filtros")
+            st.markdown('<h1 class="sidebar-title">Mapa do Bosque</h1>', unsafe_allow_html=True)
 
             # Obtém intervalo de datas disponível
             min_date_available, max_date_available = self.data_service.get_available_date_range()
@@ -37,26 +164,12 @@ class SidebarComponent:
             # Filtro de shopping
             shopping_filter = self._render_shopping_filter()
 
-            st.markdown("---")
-
-            # Seletor de layout
-            layout = self._render_layout_selector()
-
-            st.markdown("---")
-
-            # Seção de usuário
-            self._render_user_section()
-
-            st.markdown("---")
-
-            # Informação de conexão
-            self._render_connection_info()
 
             # Combina todos os filtros
             filters = {
                 **date_filters,
                 'shopping': shopping_filter,
-                'layout': layout
+                'metodo_semana': 'travelling'  # Sempre usar travelling week
             }
 
             return filters
@@ -76,7 +189,7 @@ class SidebarComponent:
         Returns:
             Dicionário com datas selecionadas
         """
-        st.subheader("📅 Data de Referência")
+        st.markdown('<h2 class="section-title">📅 Data</h2>', unsafe_allow_html=True)
 
         # Verifica se temos dados disponíveis
         if min_date is not None and max_date is not None:
@@ -88,7 +201,7 @@ class SidebarComponent:
             default_date = max_date_obj
 
             data_ref = st.date_input(
-                "Selecione a data",
+                "Data",
                 value=default_date,
                 min_value=min_date_obj,
                 max_value=max_date_obj,
@@ -100,7 +213,7 @@ class SidebarComponent:
             st.info("Verifique a conexão com o banco de dados")
             # Usa entrada de data alternativa sem restrições
             data_ref = st.date_input(
-                "Selecione a data",
+                "Data",
                 value=datetime.now(),
                 help="Data final do período"
             )
@@ -111,8 +224,17 @@ class SidebarComponent:
         except Exception:
             data_ref_ts = pd.Timestamp(datetime.now() if max_date is None else max_date)
 
+        # Valida se data_ref_ts é válido
+        if pd.isna(data_ref_ts) or data_ref_ts is None:
+            data_ref_ts = pd.Timestamp(datetime.now())
+
         # Calcula o período de análise baseado na data de referência
-        ano_ref = data_ref_ts.year
+        ano_ref = data_ref_ts.year if hasattr(data_ref_ts, 'year') else datetime.now().year
+
+        # Valida ano_ref
+        if pd.isna(ano_ref) or ano_ref is None:
+            ano_ref = datetime.now().year
+
         ano_anterior = ano_ref - 1
 
         # Data inicial: 1º de janeiro do ano anterior (para comparação YoY)
@@ -157,8 +279,9 @@ class SidebarComponent:
             if "SCIB" in shopping_options:
                 default_index = shopping_options.index("SCIB")
 
+            st.markdown('<h2 class="section-title">🏪 Shopping</h2>', unsafe_allow_html=True)
             filtro_shopping = st.selectbox(
-                "🏪 Shopping",
+                "Shopping",
                 options=shopping_options,
                 index=default_index,  # SCIB como padrão se disponível
                 help="Selecione o shopping para filtrar os dados"
@@ -170,44 +293,14 @@ class SidebarComponent:
             return filtro_shopping
         else:
             # Fallback para entrada de texto
+            st.markdown('<h2 class="section-title">🏪 Shopping</h2>', unsafe_allow_html=True)
             filtro_shopping = st.text_input(
-                "🏪 Shopping (opcional)",
+                "Shopping",
                 placeholder="Digite o nome do shopping",
                 help="Deixe vazio para ver todos"
             )
             return filtro_shopping if filtro_shopping else None
 
-    def _render_layout_selector(self) -> str:
-        """
-        Renderiza seletor de layout
 
-        Returns:
-            Layout selecionado
-        """
-        st.header("📐 Layout")
 
-        layout_opcao = st.radio(
-            "Disposição dos gráficos:",
-            options=["Um abaixo do outro", "Abas"],
-            help="Escolha como visualizar os gráficos"
-        )
 
-        return layout_opcao
-
-    def _render_user_section(self):
-        """Renderiza seção de informações do usuário"""
-        st.markdown("### 👤 Usuário")
-        st.info(f"Logado como: **{st.session_state.get('username', 'Usuário')}**")
-
-        if st.button("🚪 Sair", width="stretch", type="secondary"):
-            logout()
-
-    def _render_connection_info(self):
-        """Renderiza informação sobre a conexão do banco de dados"""
-        if self.db_type == "supabase":
-            schema = os.getenv('SUPABASE_SCHEMA_MAPA', 'mapa_do_bosque')
-            st.caption(f"🔗 Conectado a: Supabase - {schema}")
-        else:
-            db_info = os.getenv('POSTGRES_DATABASE', 'PostgreSQL')
-            host_info = os.getenv('POSTGRES_HOST', 'localhost')
-            st.caption(f"🔗 Conectado a: PostgreSQL - {db_info}@{host_info}")
